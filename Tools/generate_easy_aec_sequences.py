@@ -40,7 +40,7 @@ def make_easy_rir(kind: str = "short") -> np.ndarray:
     if kind == "short":
         h = np.array([0.9, 0.5, -0.25, 0.12, 0.05], dtype=np.float32)
     elif kind == "exp":
-        h = np.array([0.8, 0.6, 0.4, 0.25, 0.15, 0.08, 0.04, 0.02], dtype=np.float32)
+        h = np.array([0.9, 0.65, 0.46, 0.33, 0.24, 0.17, 0.12, 0.08], dtype=np.float32)
     else:
         raise ValueError(f"Unsupported rir kind: {kind}")
     return h
