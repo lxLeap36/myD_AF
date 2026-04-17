@@ -97,9 +97,11 @@ def main():
     print_summary(results, sample, CONFIG)
 
     # 6. 保存结果
+    print(f"开始保存结果...")
     save_results(results, sample, CONFIG, out_dir)
 
     # 7. 画图
+    print(f"开始绘图...")
     plot_curves(results, CONFIG, out_dir)
     plot_signal_comparison(results, sample, CONFIG, out_dir)
     plot_path_comparison(results, sample, CONFIG, out_dir)
