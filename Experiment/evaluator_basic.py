@@ -80,9 +80,14 @@ def evaluate_sample(sample, e, scenario_name, fs, cfg):
 
     # 第一版只在 double-talk 下把 e 当近端恢复输出
     if scenario_name == "double_talk":
+        # try:
+        #     pesq_value = tensor_to_float(compute_pesq(clean=s, enhanced=e, fs=fs))
+        # except Exception:
+        #     pesq_value = None
         try:
             pesq_value = tensor_to_float(compute_pesq(clean=s, enhanced=e, fs=fs))
-        except Exception:
+        except Exception as ex:
+            print(f"[PESQ ERROR] {type(ex).__name__}: {ex}")
             pesq_value = None
 
         try:

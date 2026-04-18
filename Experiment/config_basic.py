@@ -14,7 +14,7 @@ CONFIG = {
     # "noisy_single_talk"
     # "double_talk"
     # "path_change"
-    "scenario_name": "path_change",
+    "scenario_name": "double_talk",
 
     # ===== 单条实验语音时长 =====
     "duration_sec": 15.0,
