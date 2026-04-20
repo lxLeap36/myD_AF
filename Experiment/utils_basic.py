@@ -168,6 +168,7 @@ def build_scenario(cfg):
         fs=fs,
         trim_mode="active",
         seed=seed,
+        max_internal_silence_sec=cfg["max_internal_silence_sec"],
     )
 
     near_end = None
@@ -245,6 +246,7 @@ def build_scenario(cfg):
             fs=fs,
             trim_mode="active",
             seed=seed + 1,
+            max_internal_silence_sec=cfg["max_internal_silence_sec"],
         )
 
         sample = generate_double_talk(

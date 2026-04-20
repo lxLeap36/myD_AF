@@ -19,6 +19,9 @@ def get_config():
         # -----------------------------
         "sample_rate": 16000,
         "duration_sec": 3.0,
+        # 用于 preprocess_speech(trim_mode='active') 的最大内部静音长度（秒）
+        # 建议值：0.2~0.5，默认设置为 0.3 以压缩较长停顿但保留自然短停顿
+        "max_internal_silence_sec": 0.3,
 
         # "dataset": {
         #     "clean_speech1_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),

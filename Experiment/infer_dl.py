@@ -59,12 +59,16 @@ def main():
     out_dir = os.path.join(cfg["output_dir"], "inference")
     ensure_dir(out_dir)
 
-    ckpt_path = find_checkpoint(cfg)
+    ckpt_path = find_checkpoint(cfg) # 找到要加载的best_model.pt路径，或者是cfg里指定的路径
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-    checkpoint = torch.load(ckpt_path, map_location="cpu")
+    checkpoint = torch.load(ckpt_path, map_location="cpu") # 指定 map_location="cpu" 会强制将所有张量加载到 CPU 内存中
     num_freq_bins = checkpoint["num_freq_bins"]
+    # checkpoint可以理解为 模型快照 或 存档点，从best_model.pt中加载的 checkpoint 包含了模型在训练过程中最好的状态信息，
+    #                                                                                       通常是在验证集上表现最好的模型参数。
+    # 它包含了模型的状态字典（model_state_dict）以及其他相关信息（如 "model_state_dict", "config", "best_val_loss", "epoch" 等）。
+    # 通过加载 checkpoint，我们可以恢复模型的训练状态或者进行推理。
 
     print(f"Loaded checkpoint from {ckpt_path}, num_freq_bins={num_freq_bins}")
     model = CNNLSTMSTFT(
@@ -72,6 +76,9 @@ def main():
         lstm_hidden=cfg["model"]["lstm_hidden"],
     )
     model.load_state_dict(checkpoint["model_state_dict"])
+    # 从 checkpoint 中提取模型的状态字典（model_state_dict），并将其加载到 model 实例中。这一步会将 checkpoint 中保存的
+    #                               模型参数（权重和偏置）赋值给 model 实例，使其恢复到 checkpoint 时的状态，模型具备了推理能力。
+
     model.to(device)
     model.eval()
 

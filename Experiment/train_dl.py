@@ -43,20 +43,22 @@ def run_one_epoch(
         input_feat, target_mag, _ = move_batch_to_device(batch, device)
 
         if is_train:
-            optimizer.zero_grad()
+            optimizer.zero_grad() # 清除上一步的梯度信息，准备计算当前 batch 的梯度
 
         pred_mag = model(input_feat)                # [B, T, F]
         loss = criterion(pred_mag, target_mag)
 
         if is_train:
-            loss.backward()
-            optimizer.step()
+            loss.backward() # 反向传播计算梯度
+            optimizer.step() # 按照优化器的更新规则更新模型参数
 
         bsz = input_feat.size(0)
         total_loss += loss.item() * bsz
-        total_count += bsz
+        # 在 PyTorch 中，loss 是一个标量张量，其值通常是该 batch 内所有样本损失的平均值，
+        # 用 loss.item() * bsz 恢复该 batch 的总损失和（所有样本损失之和）
+        total_count += bsz # 总样本数量
 
-    mean_loss = total_loss / max(total_count, 1)
+    mean_loss = total_loss / max(total_count, 1) # 用 总损失和 / 总样本数 得到所有样本的平均损失。1 是为了避免除以零的情况。
     return mean_loss
 
 
@@ -192,6 +194,13 @@ def main():
     for epoch in range(1, epochs + 1):
         train_loss = run_one_epoch(model, train_loader, criterion, device, optimizer)
         val_loss = run_one_epoch(model, val_loader, criterion, device, optimizer=None)
+        # 验证集只读不改，它的权重来源于本 epoch 训练结束时的模型参数。
+        """在同一个 epoch 中，run_one_epoch 先以训练模式（optimizer 不为 None）执行，
+        模型参数会通过 loss.backward() 和 optimizer.step() 被更新；
+            紧接着以验证模式（optimizer=None）执行时：is_train = False → model.train(False) → 模型进入评估模式,
+        不会调用 optimizer.zero_grad()、loss.backward()、optimizer.step(),模型权重不发生任何改变
+            所以验证集使用的权重正是当前 epoch 训练刚刚完成后的参数（即上一轮训练更新的结果）。
+            这样设计的目的是：在每个训练 epoch 结束后，立即用最新的模型在验证集上评估性能，以便判断是否过拟合、是否保存最佳模型等。"""
 
         history["train_loss"].append(float(train_loss))
         history["val_loss"].append(float(val_loss))
