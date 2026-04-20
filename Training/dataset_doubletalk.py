@@ -1,7 +1,6 @@
 import copy
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
-import numpy as np
 import torch
 from torch.utils.data import Dataset
 
@@ -27,11 +26,13 @@ class DoubleTalkSTFTDataset(Dataset):
         base_cfg: Dict[str, Any],
         num_samples: int,
         split: str = "train",
+        max_build_retries: int = 20,
     ):
         super().__init__()
         self.base_cfg = copy.deepcopy(base_cfg)
         self.num_samples = int(num_samples)
         self.split = split
+        self.max_build_retries = int(max_build_retries)
 
         stft_cfg = self.base_cfg["stft"]
         self.n_fft = int(stft_cfg["n_fft"])
@@ -55,12 +56,35 @@ class DoubleTalkSTFTDataset(Dataset):
         # 强制使用 double_talk
         cfg["scenario_name"] = "double_talk"
 
-        sample = build_scenario(cfg)
-        return sample
+        return build_scenario(cfg)
 
-    def __getitem__(self, idx: int):
-        sample = self._build_one_sample(idx)
+    def build_valid_sample(self, idx: int) -> Dict[str, Any]:
+        """
+        允许在构造样本失败时自动换 seed 重试，
+        避免单个 seed 让 train / infer 直接崩掉。
+        """
+        last_error = None
 
+        for retry in range(self.max_build_retries):
+            try_idx = idx + retry * 1000003
+            try:
+                return self._build_one_sample(try_idx)
+            except RuntimeError as exc:
+                last_error = exc
+                continue
+
+        raise RuntimeError(
+            f"Failed to build a valid double_talk sample after {self.max_build_retries} retries. "
+            f"Last error: {last_error}"
+        )
+
+    def get_raw_sample(self, idx: int) -> Dict[str, Any]:
+        """
+        给训练外流程（例如 infer）直接拿同一条 raw sample。
+        """
+        return self.build_valid_sample(idx)
+
+    def sample_to_example(self, sample: Dict[str, Any]) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
         x = torch.tensor(sample["x"], dtype=torch.float32)   # far-end
         d = torch.tensor(sample["d"], dtype=torch.float32)   # mic
         s = torch.tensor(sample["s"], dtype=torch.float32)   # clean near-end
@@ -83,8 +107,20 @@ class DoubleTalkSTFTDataset(Dataset):
         # 输入 [2, T, F]
         input_feat = torch.stack([D_mag, X_mag], dim=0)
 
+        extra_meta = sample.get("meta", {}).get("extra", {})
+        far_meta = extra_meta.get("far_meta", {}) or {}
+        near_meta = extra_meta.get("near_meta", {}) or {}
+
         meta = {
             "length": int(len(d)),
+            "far_path": far_meta.get("file_path"),
+            "near_path": near_meta.get("file_path"),
+            "far_activity_ratio": far_meta.get("activity_ratio"),
+            "near_activity_ratio": near_meta.get("activity_ratio"),
         }
 
         return input_feat, S_mag, meta
+
+    def __getitem__(self, idx: int):
+        sample = self.build_valid_sample(idx)
+        return self.sample_to_example(sample)

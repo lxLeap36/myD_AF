@@ -141,7 +141,7 @@ def _energy_threshold_ratio_from_db(silence_threshold_db: float) -> float:
     return float(10.0 ** (silence_threshold_db / 20.0))
 
 
-def _frame_activity_mask(
+def _frame_activity_mask_from_rms(
     rms: np.ndarray,
     silence_threshold_db: float = -40.0,
     energy_threshold_ratio: Optional[float] = None,
@@ -162,6 +162,26 @@ def _frame_activity_mask(
 
     thr = max_rms * float(energy_threshold_ratio)
     return rms > thr
+
+
+def _sample_active_mask_from_frame_activity(
+    num_samples: int,
+    starts: np.ndarray,
+    frame_len: int,
+    frame_active: np.ndarray,
+) -> np.ndarray:
+    """
+    将 frame-level active mask 映射到 sample-level active mask。
+    """
+    sample_active = np.zeros(num_samples, dtype=bool)
+
+    for is_active, s in zip(frame_active, starts):
+        if not is_active:
+            continue
+        e = min(int(s) + frame_len, num_samples)
+        sample_active[int(s):e] = True
+
+    return sample_active
 
 
 def _active_masks_from_frame_rms(
@@ -187,19 +207,17 @@ def _active_masks_from_frame_rms(
 
     frame_len, hop_len = _frame_params(fs, frame_len_ms, hop_len_ms)
     rms, starts = _frame_rms(wav, frame_len, hop_len)
-    frame_active = _frame_activity_mask(
+    frame_active = _frame_activity_mask_from_rms(
         rms,
         silence_threshold_db=silence_threshold_db,
         energy_threshold_ratio=energy_threshold_ratio,
     )
-
-    sample_active = np.zeros(n, dtype=bool)
-    for is_active, s in zip(frame_active, starts):
-        if not is_active:
-            continue
-        e = min(int(s) + frame_len, n)
-        sample_active[int(s):e] = True
-
+    sample_active = _sample_active_mask_from_frame_activity(
+        num_samples=n,
+        starts=starts,
+        frame_len=frame_len,
+        frame_active=frame_active,
+    )
     return sample_active, frame_active
 
 
@@ -240,8 +258,8 @@ def trim_edges_silence(
     帧级首尾静音裁剪。
 
     说明:
-    - 这里不再按逐采样点 abs(wav) > thr 判静音，而是按短时帧 RMS 判定。
-    - 这样更符合语音“停顿”的概念，也不会把零交叉附近的瞬时低幅值误判成静音。
+    - 不再按逐采样点 abs(wav) > thr 判静音，而是按短时帧 RMS 判定。
+    - 更符合语音“停顿”的概念，也不会把零交叉附近的瞬时低幅值误判成静音。
     """
     wav = _to_1d_float32(wav)
 
@@ -308,6 +326,9 @@ def compress_long_internal_silence(
     kept_segments = []
     for is_active, start, end in runs:
         seg = wav[start:end]
+        if len(seg) == 0:
+            continue
+
         if is_active:
             kept_segments.append(seg)
             continue

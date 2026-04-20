@@ -1,6 +1,7 @@
 """double_talk 场景下的 STFT-domain CNN-LSTM 近端恢复模型
 V2-1 先做简单的，只估计幅度，忽略相位
-     而且，先不对应传统算法的接口"""
+而且，先不对应传统算法的接口
+"""
 import json
 import os
 import sys
@@ -78,21 +79,20 @@ def main():
     model.load_state_dict(checkpoint["model_state_dict"])
     # 从 checkpoint 中提取模型的状态字典（model_state_dict），并将其加载到 model 实例中。这一步会将 checkpoint 中保存的
     #                               模型参数（权重和偏置）赋值给 model 实例，使其恢复到 checkpoint 时的状态，模型具备了推理能力。
-
     model.to(device)
     model.eval()
 
-    # 取一条 double_talk 样本
     print(f"Building dataset and loading sample index {cfg['inference']['sample_index']}...")
     dataset = DoubleTalkSTFTDataset(
         base_cfg=cfg,
         num_samples=max(1, cfg["inference"]["sample_index"] + 1),
         split="val",
     )
-    input_feat, target_mag, meta = dataset[cfg["inference"]["sample_index"]]
 
-    # 再直接构造原始时域样本，用于重建与评估
-    raw_sample = dataset._build_one_sample(cfg["inference"]["sample_index"])
+    # 使用同一条 raw sample 来生成特征和评估目标，避免不一致
+    raw_sample = dataset.get_raw_sample(cfg["inference"]["sample_index"])
+    input_feat, target_mag, meta = dataset.sample_to_example(raw_sample)
+
     x = torch.tensor(raw_sample["x"], dtype=torch.float32)
     d = torch.tensor(raw_sample["d"], dtype=torch.float32)
     s = torch.tensor(raw_sample["s"], dtype=torch.float32)
@@ -142,21 +142,18 @@ def main():
     si_sdr_val = compute_si_sdr(s_np, s_hat)
 
     # ERLE 仅作为参考：
-    # 这里把 residual 近似看成 d - s_hat
     residual = d_np - s_hat
     ref_echo = d_np - s_np
     erle_ref = 10.0 * np.log10(
         (np.sum(ref_echo ** 2) + 1e-12) / (np.sum(residual ** 2) + 1e-12)
     )
 
-    # 保存音频
-    print(f"开始保存音频...")
+    print("开始保存音频...")
     sf.write(os.path.join(out_dir, "far_end_x.wav"), x_np, cfg["sample_rate"])
     sf.write(os.path.join(out_dir, "mic_d.wav"), d_np, cfg["sample_rate"])
     sf.write(os.path.join(out_dir, "clean_near_s.wav"), s_np, cfg["sample_rate"])
     sf.write(os.path.join(out_dir, "pred_near_s_hat.wav"), s_hat, cfg["sample_rate"])
 
-    # 保存 numpy
     np.savez(
         os.path.join(out_dir, "inference_arrays.npz"),
         x=x_np,
@@ -167,7 +164,6 @@ def main():
         target_logmag=target_mag.numpy(),
     )
 
-    # 画谱图对比
     fig = plt.figure(figsize=(12, 8))
 
     ax1 = fig.add_subplot(3, 1, 1)
@@ -197,6 +193,10 @@ def main():
         "erle_reference": float(erle_ref),
         "sample_rate": int(cfg["sample_rate"]),
         "signal_length": int(len(d_np)),
+        "far_path": meta.get("far_path"),
+        "near_path": meta.get("near_path"),
+        "far_activity_ratio": meta.get("far_activity_ratio"),
+        "near_activity_ratio": meta.get("near_activity_ratio"),
     }
     save_json(summary, os.path.join(out_dir, "summary.json"))
 

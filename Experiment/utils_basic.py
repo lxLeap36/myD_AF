@@ -153,6 +153,36 @@ def build_algorithm(name: str, cfg):
     raise ValueError(f"Unsupported algorithm name: {name}")
 
 
+def _get_preprocess_cfg(cfg, which: str):
+    """
+    读取 speech_preprocess 配置。
+    which 取 "far" 或 "near"。
+
+    如果配置里没有 speech_preprocess，则回退到旧逻辑默认值，
+    这样旧的 config_basic.py / config_dl.py 不会直接失效。
+    """
+    speech_pp = cfg.get("speech_preprocess", {})
+    pp = speech_pp.get(which, {})
+
+    return {
+        "trim_mode": pp.get("trim_mode", "active"),
+        "silence_threshold_db": pp.get("silence_threshold_db", -40.0),
+        "max_internal_silence_sec": pp.get(
+            "max_internal_silence_sec",
+            cfg.get("max_internal_silence_sec", 0.3),
+        ),
+        "min_activity_ratio": pp.get(
+            "min_activity_ratio",
+            0.10 if which == "far" else 0.15,
+        ),
+        "min_rms_db": pp.get("min_rms_db", -45.0),
+        "max_trials": pp.get("max_trials", 50),
+        "frame_len_ms": pp.get("frame_len_ms", 25.0),
+        "hop_len_ms": pp.get("hop_len_ms", 10.0),
+        "energy_threshold_ratio": pp.get("energy_threshold_ratio", None),
+    }
+
+
 def build_scenario(cfg):
     """
     根据配置构造 sample dict
@@ -162,13 +192,23 @@ def build_scenario(cfg):
     duration_sec = cfg["duration_sec"]
     scenario_name = cfg["scenario_name"]
 
+    far_pp = _get_preprocess_cfg(cfg, "far")
+    near_pp = _get_preprocess_cfg(cfg, "near")
+
     far_end, far_meta = sample_far_end(
         source_dir=cfg["far_speech_dir"],
         target_duration_sec=duration_sec,
         fs=fs,
-        trim_mode="active",
+        trim_mode=far_pp["trim_mode"],
         seed=seed,
-        max_internal_silence_sec=cfg["max_internal_silence_sec"],
+        max_internal_silence_sec=far_pp["max_internal_silence_sec"],
+        silence_threshold_db=far_pp["silence_threshold_db"],
+        min_activity_ratio=far_pp["min_activity_ratio"],
+        min_rms_db=far_pp["min_rms_db"],
+        max_trials=far_pp["max_trials"],
+        frame_len_ms=far_pp["frame_len_ms"],
+        hop_len_ms=far_pp["hop_len_ms"],
+        energy_threshold_ratio=far_pp["energy_threshold_ratio"],
     )
 
     near_end = None
@@ -244,9 +284,16 @@ def build_scenario(cfg):
             source_dir=cfg["near_speech_dir"],
             target_duration_sec=duration_sec,
             fs=fs,
-            trim_mode="active",
+            trim_mode=near_pp["trim_mode"],
             seed=seed + 1,
-            max_internal_silence_sec=cfg["max_internal_silence_sec"],
+            max_internal_silence_sec=near_pp["max_internal_silence_sec"],
+            silence_threshold_db=near_pp["silence_threshold_db"],
+            min_activity_ratio=near_pp["min_activity_ratio"],
+            min_rms_db=near_pp["min_rms_db"],
+            max_trials=near_pp["max_trials"],
+            frame_len_ms=near_pp["frame_len_ms"],
+            hop_len_ms=near_pp["hop_len_ms"],
+            energy_threshold_ratio=near_pp["energy_threshold_ratio"],
         )
 
         sample = generate_double_talk(

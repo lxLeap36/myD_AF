@@ -15,41 +15,51 @@ def get_config():
 
         # -----------------------------
         # 数据 / 场景
-        # 这里尽量沿用你现有平台的字段
         # -----------------------------
         "sample_rate": 16000,
         "duration_sec": 3.0,
-        # 用于 preprocess_speech(trim_mode='active') 的最大内部静音长度（秒）
-        # 建议值：0.2~0.5，默认设置为 0.3 以压缩较长停顿但保留自然短停顿
+
+        # 兼容旧逻辑的保底字段
         "max_internal_silence_sec": 0.3,
 
-        # "dataset": {
-        #     "clean_speech1_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),
-        #     "clean_speech2_dir": os.path.join(root_dir, "Dataset", "clean_speech2"),
-        #     "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom", "Room001"),
-        #     "babble_noise_dir": os.path.join(root_dir, "Dataset", "Noise", "babble_noise"),
-        # },
-
-        # ===== 对齐Experiment.utils_basic 的 build_scenario load_rir 中的关键字 =====
+        # ===== 对齐 Experiment.utils_basic 的 build_scenario 关键字 =====
         "scenario_name": "double_talk",
-        "ser_db": 0.0,  # double_talk 用
+        "ser_db": 0.0,
         "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),
         "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech2"),
         "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom", "Room001"),
-        # "rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "smallroom" / "Room001",
         "babble_noise_dir": os.path.join(root_dir, "Dataset", "Noise", "babble_noise"),
         "fs": 16000,
         "rir_path": None,
 
-        # "scenario": {
-        #     "name": "double_talk",
-        #     # 下面这些字段名，如果和你现有 build_scenario 要求有少量出入，
-        #     # 到时我再按你 repo 实际报错帮你对齐。
-        #     "double_talk": {
-        #         "ser_db_min": -6.0,
-        #         "ser_db_max": 6.0,
-        #     },
-        # },
+        # -----------------------------
+        # 新增：统一的语音预处理配置
+        # far / near 分开配
+        # -----------------------------
+        "speech_preprocess": {
+            "far": {
+                "trim_mode": "active",
+                "silence_threshold_db": -40.0,
+                "max_internal_silence_sec": 0.30,
+                "min_activity_ratio": 0.10,
+                "min_rms_db": -45.0,
+                "max_trials": 50,
+                "frame_len_ms": 25.0,
+                "hop_len_ms": 10.0,
+                "energy_threshold_ratio": None,
+            },
+            "near": {
+                "trim_mode": "active",
+                "silence_threshold_db": -40.0,
+                "max_internal_silence_sec": 0.001,
+                "min_activity_ratio": 0.35,
+                "min_rms_db": -45.0,
+                "max_trials": 80,
+                "frame_len_ms": 25.0,
+                "hop_len_ms": 10.0,
+                "energy_threshold_ratio": None,
+            },
+        },
 
         # -----------------------------
         # STFT
