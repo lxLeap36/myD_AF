@@ -269,9 +269,9 @@ def sample_speech(
     trim_mode: str = "light",
     silence_threshold_db: float = -40.0,
     max_internal_silence_sec: float = 0.001,
-    min_activity_ratio: float = 0.05,
+    min_activity_ratio: float = 0.20,
     min_rms_db: float = -45.0,
-    max_trials: int = 200,
+    max_trials: int = 20,
     seed: Optional[int] = None,
     rng: Optional[np.random.Generator] = None,
 ):

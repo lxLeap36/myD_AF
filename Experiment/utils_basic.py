@@ -243,7 +243,7 @@ def build_scenario(cfg):
             source_dir=cfg["near_speech_dir"],
             target_duration_sec=duration_sec,
             fs=fs,
-            trim_mode="light",
+            trim_mode="active",
             seed=seed + 1,
         )
 

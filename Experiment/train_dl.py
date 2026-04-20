@@ -15,7 +15,7 @@ if ROOT_DIR not in sys.path:
 from Experiment.config_dl import get_config
 from Models.cnn_lstm_stft import CNNLSTMSTFT
 from Training.dataset_doubletalk import DoubleTalkSTFTDataset
-from Training.losses import SpectralL1Loss
+from Training.losses import WeightedSpectralL1Loss
 from Tools.set_seed import set_seed
 
 
@@ -67,11 +67,12 @@ def save_json(obj: Dict[str, Any], path: str):
 
 def main():
     cfg = get_config()
-
+    # 配置与目录准备
     os.makedirs(cfg["output_dir"], exist_ok=True)
     ckpt_dir = os.path.join(cfg["output_dir"], "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
 
+    # 随机种子与设备
     set_seed(cfg["seed"])
 
     device_name = cfg["device"]
@@ -92,6 +93,59 @@ def main():
         split="val",
     )
 
+    # # ===== 调试：打印前 20 个训练样本对应的 far / near 文件组合 =====
+    # print("\n===== Preview first 20 training samples =====")
+    # preview_n = min(20, len(train_set))
+    # combo_counter = {}
+    #
+    # for i in range(preview_n):
+    #     raw_sample = train_set._build_one_sample(i)
+    #
+    #     extra = raw_sample.get("meta", {}).get("extra", {})
+    #     far_meta = extra.get("far_meta", {}) or {}
+    #     near_meta = extra.get("near_meta", {}) or {}
+    #
+    #     far_path = far_meta.get("file_path", "N/A")
+    #     near_path = near_meta.get("file_path", "N/A")
+    #     far_start = far_meta.get("start_sample_in_raw_file", "N/A")
+    #     near_start = near_meta.get("start_sample_in_raw_file", "N/A")
+    #
+    #     combo_key = (far_path, near_path)
+    #     combo_counter[combo_key] = combo_counter.get(combo_key, 0) + 1
+    #
+    #     print(f"[train sample {i:02d}]")
+    #     print(f"  far : {far_path}")
+    #     print(f"        start_sample_in_raw_file = {far_start}")
+    #     print(f"  near: {near_path}")
+    #     print(f"        start_sample_in_raw_file = {near_start}")
+    #
+    # print("\n===== Unique far/near combinations in preview =====")
+    # for k, v in combo_counter.items():
+    #     print(f"{v:2d} times | far={k[0]} | near={k[1]}")
+    # print("=============================================\n")
+    #
+    # # ===== 统计整个训练集的 far/near 组合分布 =====
+    # print("\n===== Count all train combinations =====")
+    # all_combo_counter = {}
+    #
+    # for i in range(len(train_set)):
+    #     raw_sample = train_set._build_one_sample(i)
+    #
+    #     extra = raw_sample.get("meta", {}).get("extra", {})
+    #     far_meta = extra.get("far_meta", {}) or {}
+    #     near_meta = extra.get("near_meta", {}) or {}
+    #
+    #     far_path = far_meta.get("file_path", "N/A")
+    #     near_path = near_meta.get("file_path", "N/A")
+    #
+    #     combo_key = (far_path, near_path)
+    #     all_combo_counter[combo_key] = all_combo_counter.get(combo_key, 0) + 1
+    #
+    # for k, v in sorted(all_combo_counter.items(), key=lambda x: x[1], reverse=True):
+    #     print(f"{v:3d} times | far={k[0]} | near={k[1]}")
+    #
+    # print("=======================================\n")
+
     train_loader = DataLoader(
         train_set,
         batch_size=cfg["batch_size"],
@@ -111,12 +165,13 @@ def main():
     sample_input, sample_target, _ = train_set[0] # 还有meta_dict，额外信息（可选调试）
     _, t0, f0 = sample_input.shape
 
+    # 模型、损失、优化器
     model = CNNLSTMSTFT(
         num_freq_bins=f0,
         lstm_hidden=cfg["model"]["lstm_hidden"],
     ).to(device)
 
-    criterion = SpectralL1Loss()
+    criterion = WeightedSpectralL1Loss()
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=cfg["train"]["lr"],

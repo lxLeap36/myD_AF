@@ -56,7 +56,6 @@ class DoubleTalkSTFTDataset(Dataset):
         cfg["scenario_name"] = "double_talk"
 
         sample = build_scenario(cfg)
-        # 这里为何多了一层函数调用？
         return sample
 
     def __getitem__(self, idx: int):
