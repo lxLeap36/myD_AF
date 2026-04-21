@@ -41,3 +41,54 @@ class WeightedSpectralL1Loss(nn.Module):
 
         loss = torch.abs(pred - target) * weight
         return loss.mean()
+
+class DTMaskedWeightedSpectralL1Loss(nn.Module):
+    """
+    训练时利用 double-talk mask 的加权谱损失。
+
+    输入:
+        pred   : [B, T, F]
+        target : [B, T, F]
+        dt_mask: [B, T]   (soft mask, 范围约 [0,1])
+
+    思路:
+    1) 保留“target 能量越大，权重越高”
+    2) 在 dt 帧上再提高监督权重
+    3) non-dt 帧保留较小权重，而不是完全忽略
+    """
+
+    def __init__(
+        self,
+        alpha: float = 4.0,
+        dt_weight: float = 4.0,
+        non_dt_weight: float = 0.25,
+        eps: float = 1e-8,
+    ):
+        super().__init__()
+        self.alpha = float(alpha)
+        self.dt_weight = float(dt_weight)
+        self.non_dt_weight = float(non_dt_weight)
+        self.eps = float(eps)
+
+    def forward(
+        self,
+        pred: torch.Tensor,
+        target: torch.Tensor,
+        dt_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        pred   : [B, T, F]
+        target : [B, T, F]
+        dt_mask: [B, T]
+        """
+        # 频谱能量加权
+        target_norm = target / (target.amax(dim=(1, 2), keepdim=True) + self.eps)
+        spectral_weight = 1.0 + self.alpha * target_norm  # [B,T,F]
+
+        # 时间维 mask 加权
+        # dt 帧权重大，非 dt 帧保留较小权重
+        time_weight = self.non_dt_weight + (self.dt_weight - self.non_dt_weight) * dt_mask
+        time_weight = time_weight.unsqueeze(-1)  # [B,T,1]
+
+        loss = torch.abs(pred - target) * spectral_weight * time_weight
+        return loss.mean()

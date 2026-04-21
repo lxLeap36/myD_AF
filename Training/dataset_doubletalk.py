@@ -2,6 +2,7 @@ import copy
 from typing import Dict, Any, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 from Experiment.utils_basic import build_scenario
@@ -13,12 +14,17 @@ class DoubleTalkSTFTDataset(Dataset):
     在线生成 double_talk 场景样本，并转换成最小 STFT-domain 训练样本。
 
     输出:
-        input_feat : [2, T, F]
+        input_feat   : [2, T, F]
             channel 0 = log1p(|D|)
             channel 1 = log1p(|X|)
-        target_mag : [T, F]
+
+        target_mag   : [T, F]
             log1p(|S|)
-        meta_dict   : 额外信息（可选调试）
+
+        dt_mask_frame: [T]
+            double-talk 帧级 soft mask，范围大致在 [0, 1]
+
+        meta_dict    : 额外信息（可选调试）
     """
 
     def __init__(
@@ -79,33 +85,65 @@ class DoubleTalkSTFTDataset(Dataset):
         )
 
     def get_raw_sample(self, idx: int) -> Dict[str, Any]:
-        """
-        给训练外流程（例如 infer）直接拿同一条 raw sample。
-        """
         return self.build_valid_sample(idx)
 
-    def sample_to_example(self, sample: Dict[str, Any]) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
+    def _time_mask_to_frame_mask(self, mask_1d: torch.Tensor, num_frames: int) -> torch.Tensor:
+        """
+        把时域 [N] mask 映射成帧级 [T] soft mask。
+
+        做法：
+        - 按 STFT 的 center=True 近似做左右 padding
+        - 用 win_length 窗口、hop_length 步长对 mask 做 unfold
+        - 每帧取窗口平均值，得到 [0, 1] 的 soft mask
+        """
+        mask_1d = mask_1d.float()
+        if mask_1d.ndim != 1:
+            raise ValueError("mask_1d must be 1-D")
+
+        pad = self.n_fft // 2
+        x = mask_1d.unsqueeze(0).unsqueeze(0)  # [1,1,N]
+        x = F.pad(x, (pad, pad))
+
+        needed_len = (num_frames - 1) * self.hop_length + self.win_length
+        cur_len = x.shape[-1]
+        if cur_len < needed_len:
+            x = F.pad(x, (0, needed_len - cur_len))
+
+        frames = x.unfold(dimension=-1, size=self.win_length, step=self.hop_length)
+        # [1,1,T,win]
+        frame_mask = frames[0, 0, :num_frames].mean(dim=-1)  # [T]
+        frame_mask = torch.clamp(frame_mask, 0.0, 1.0)
+        return frame_mask
+
+    def sample_to_example(self, sample: Dict[str, Any]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, Any]]:
         x = torch.tensor(sample["x"], dtype=torch.float32)   # far-end
         d = torch.tensor(sample["d"], dtype=torch.float32)   # mic
         s = torch.tensor(sample["s"], dtype=torch.float32)   # clean near-end
 
-        # STFT: [F, T], complex
         X = stft_complex(x, self.n_fft, self.hop_length, self.win_length, self.window)
         D = stft_complex(d, self.n_fft, self.hop_length, self.win_length, self.window)
         S = stft_complex(s, self.n_fft, self.hop_length, self.win_length, self.window)
 
-        # log1p magnitude
         X_mag = torch.log1p(torch.abs(X))   # [F, T]
         D_mag = torch.log1p(torch.abs(D))   # [F, T]
         S_mag = torch.log1p(torch.abs(S))   # [F, T]
 
-        # 转成 [T, F]
-        X_mag = X_mag.transpose(0, 1).contiguous()
-        D_mag = D_mag.transpose(0, 1).contiguous()
-        S_mag = S_mag.transpose(0, 1).contiguous()
+        X_mag = X_mag.transpose(0, 1).contiguous()   # [T, F]
+        D_mag = D_mag.transpose(0, 1).contiguous()   # [T, F]
+        S_mag = S_mag.transpose(0, 1).contiguous()   # [T, F]
 
-        # 输入 [2, T, F]
-        input_feat = torch.stack([D_mag, X_mag], dim=0)
+        input_feat = torch.stack([D_mag, X_mag], dim=0)  # [2, T, F]
+
+        # 取 double-talk 时域 mask -> 帧级 soft mask
+        masks = sample.get("masks", {})
+        dt_mask_time = torch.tensor(
+            masks.get("double_talk_mask", torch.zeros(len(d))),
+            dtype=torch.float32,
+        )
+        dt_mask_frame = self._time_mask_to_frame_mask(
+            dt_mask_time,
+            num_frames=S_mag.shape[0],
+        )  # [T]
 
         extra_meta = sample.get("meta", {}).get("extra", {})
         far_meta = extra_meta.get("far_meta", {}) or {}
@@ -119,7 +157,7 @@ class DoubleTalkSTFTDataset(Dataset):
             "near_activity_ratio": near_meta.get("activity_ratio"),
         }
 
-        return input_feat, S_mag, meta
+        return input_feat, S_mag, dt_mask_frame, meta
 
     def __getitem__(self, idx: int):
         sample = self.build_valid_sample(idx)

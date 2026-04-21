@@ -15,15 +15,16 @@ if ROOT_DIR not in sys.path:
 from Experiment.config_dl import get_config
 from Models.cnn_lstm_stft import CNNLSTMSTFT
 from Training.dataset_doubletalk import DoubleTalkSTFTDataset
-from Training.losses import WeightedSpectralL1Loss
+from Training.losses import DTMaskedWeightedSpectralL1Loss
 from Tools.set_seed import set_seed
 
 
 def move_batch_to_device(batch, device):
-    input_feat, target_mag, meta = batch
+    input_feat, target_mag, dt_mask, meta = batch
     input_feat = input_feat.to(device)
     target_mag = target_mag.to(device)
-    return input_feat, target_mag, meta
+    dt_mask = dt_mask.to(device)
+    return input_feat, target_mag, dt_mask, meta
 
 
 def run_one_epoch(
@@ -40,13 +41,13 @@ def run_one_epoch(
     total_count = 0
 
     for batch in loader:
-        input_feat, target_mag, _ = move_batch_to_device(batch, device)
+        input_feat, target_mag, dt_mask, _ = move_batch_to_device(batch, device)
 
         if is_train:
-            optimizer.zero_grad() # 清除上一步的梯度信息，准备计算当前 batch 的梯度
+            optimizer.zero_grad()
 
-        pred_mag = model(input_feat)                # [B, T, F]
-        loss = criterion(pred_mag, target_mag)
+        pred_mag = model(input_feat)  # [B, T, F]
+        loss = criterion(pred_mag, target_mag, dt_mask)
 
         if is_train:
             loss.backward() # 反向传播计算梯度
@@ -95,37 +96,6 @@ def main():
         split="val",
     )
 
-    # # ===== 调试：打印前 20 个训练样本对应的 far / near 文件组合 =====
-    # print("\n===== Preview first 20 training samples =====")
-    # preview_n = min(20, len(train_set))
-    # combo_counter = {}
-    #
-    # for i in range(preview_n):
-    #     raw_sample = train_set._build_one_sample(i)
-    #
-    #     extra = raw_sample.get("meta", {}).get("extra", {})
-    #     far_meta = extra.get("far_meta", {}) or {}
-    #     near_meta = extra.get("near_meta", {}) or {}
-    #
-    #     far_path = far_meta.get("file_path", "N/A")
-    #     near_path = near_meta.get("file_path", "N/A")
-    #     far_start = far_meta.get("start_sample_in_raw_file", "N/A")
-    #     near_start = near_meta.get("start_sample_in_raw_file", "N/A")
-    #
-    #     combo_key = (far_path, near_path)
-    #     combo_counter[combo_key] = combo_counter.get(combo_key, 0) + 1
-    #
-    #     print(f"[train sample {i:02d}]")
-    #     print(f"  far : {far_path}")
-    #     print(f"        start_sample_in_raw_file = {far_start}")
-    #     print(f"  near: {near_path}")
-    #     print(f"        start_sample_in_raw_file = {near_start}")
-    #
-    # print("\n===== Unique far/near combinations in preview =====")
-    # for k, v in combo_counter.items():
-    #     print(f"{v:2d} times | far={k[0]} | near={k[1]}")
-    # print("=============================================\n")
-    #
     # # ===== 统计整个训练集的 far/near 组合分布 =====
     # print("\n===== Count all train combinations =====")
     # all_combo_counter = {}
@@ -164,7 +134,7 @@ def main():
     )
 
     # 用一条样本自动确定 F
-    sample_input, sample_target, _ = train_set[0] # 还有meta_dict，额外信息（可选调试）
+    sample_input, sample_target, sample_dt_mask, _ = train_set[0] # 还有meta_dict，额外信息（可选调试）
     _, t0, f0 = sample_input.shape
 
     # 模型、损失、优化器
@@ -173,7 +143,11 @@ def main():
         lstm_hidden=cfg["model"]["lstm_hidden"],
     ).to(device)
 
-    criterion = WeightedSpectralL1Loss()
+    criterion = DTMaskedWeightedSpectralL1Loss(
+        alpha=4.0,
+        dt_weight=4.0,
+        non_dt_weight=0.25,
+    )
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=cfg["train"]["lr"],

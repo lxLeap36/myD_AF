@@ -91,7 +91,7 @@ def main():
 
     # 使用同一条 raw sample 来生成特征和评估目标，避免不一致
     raw_sample = dataset.get_raw_sample(cfg["inference"]["sample_index"])
-    input_feat, target_mag, meta = dataset.sample_to_example(raw_sample)
+    input_feat, target_mag, dt_mask_frame, meta = dataset.sample_to_example(raw_sample)
 
     x = torch.tensor(raw_sample["x"], dtype=torch.float32)
     d = torch.tensor(raw_sample["d"], dtype=torch.float32)
@@ -162,6 +162,7 @@ def main():
         s_hat=s_hat,
         pred_logmag=pred_logmag.numpy(),
         target_logmag=target_mag.numpy(),
+        dt_mask_frame=dt_mask_frame.numpy(),
     )
 
     fig = plt.figure(figsize=(12, 8))
