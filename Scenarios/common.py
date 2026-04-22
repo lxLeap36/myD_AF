@@ -153,3 +153,113 @@ def default_double_talk_segments(duration_sec):
         {"type": "fst", "start": t2, "end": t3},
         {"type": "dt",  "start": t3, "end": duration_sec},
     ]
+
+
+def _random_partition(total, n_parts, min_value, rng):
+    """
+    把 total 随机分成 n_parts 份，每份至少 min_value。
+    """
+    if n_parts <= 0:
+        return []
+
+    base = np.full(n_parts, float(min_value), dtype=np.float32)
+    remain = float(total) - float(np.sum(base))
+    if remain < 0:
+        raise ValueError("total is too small for the requested partition constraints.")
+
+    if remain == 0:
+        return base.tolist()
+
+    w = rng.random(n_parts).astype(np.float32)
+    w = w / (np.sum(w) + 1e-8)
+    parts = base + remain * w
+    return parts.tolist()
+
+
+def sample_random_double_talk_segments(
+    duration_sec,
+    seed=None,
+    rng=None,
+    num_dt_range=(1, 3),
+    total_dt_ratio_range=(0.35, 0.75),
+    min_dt_sec=0.30,
+    min_fst_sec=0.15,
+):
+    """
+    为 double-talk 场景随机生成分段。
+
+    设计思路：
+    - 保持“fst / dt 交替”这个基本形式
+    - 但 dt 的段数、各段时长、fst 各段时长都随机
+    - 不再固定为 25% / 25% / 25% / 25%
+    """
+    if rng is None:
+        rng = np.random.default_rng(seed)
+
+    duration_sec = float(duration_sec)
+
+    num_dt = int(rng.integers(num_dt_range[0], num_dt_range[1] + 1))
+    num_fst = num_dt + 1   # 仍然交替：fst-dt-fst-dt-...-fst
+
+    dt_ratio = float(rng.uniform(total_dt_ratio_range[0], total_dt_ratio_range[1]))
+    total_dt = duration_sec * dt_ratio
+    total_fst = duration_sec - total_dt
+
+    # 可行性检查
+    if total_dt < num_dt * min_dt_sec:
+        total_dt = num_dt * min_dt_sec
+        total_fst = duration_sec - total_dt
+
+    if total_fst < num_fst * min_fst_sec:
+        total_fst = num_fst * min_fst_sec
+        total_dt = duration_sec - total_fst
+
+    if total_dt <= 0 or total_fst <= 0:
+        # 实在不够分，就退回默认模板
+        return default_double_talk_segments(duration_sec)
+
+    dt_lens = _random_partition(total_dt, num_dt, min_dt_sec, rng)
+    fst_lens = _random_partition(total_fst, num_fst, min_fst_sec, rng)
+
+    segments = []
+    t = 0.0
+    for i in range(num_dt):
+        # fst
+        fst_len = fst_lens[i]
+        segments.append({
+            "type": "fst",
+            "start": t,
+            "end": min(duration_sec, t + fst_len),
+        })
+        t += fst_len
+
+        # dt
+        dt_len = dt_lens[i]
+        segments.append({
+            "type": "dt",
+            "start": t,
+            "end": min(duration_sec, t + dt_len),
+        })
+        t += dt_len
+
+    # 最后一个 fst
+    last_fst = fst_lens[-1]
+    segments.append({
+        "type": "fst",
+        "start": t,
+        "end": duration_sec,
+    })
+
+    # 清理一下边界
+    cleaned = []
+    for seg in segments:
+        s = max(0.0, float(seg["start"]))
+        e = min(duration_sec, float(seg["end"]))
+        if e > s:
+            cleaned.append({"type": seg["type"], "start": s, "end": e})
+
+    # 保证最后结束在 duration_sec
+    if len(cleaned) > 0:
+        cleaned[-1]["end"] = duration_sec
+
+    return cleaned

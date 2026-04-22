@@ -27,7 +27,7 @@ def get_config():
         "ser_db": 0.0,
         "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),
         "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech2"),
-        "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom", "Room001"),
+        "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom"),
         "babble_noise_dir": os.path.join(root_dir, "Dataset", "Noise", "babble_noise"),
         "fs": 16000,
         "rir_path": None,
@@ -61,6 +61,14 @@ def get_config():
             },
         },
 
+        "double_talk_segment_cfg": {
+            "mode": "random",
+            "num_dt_range": (1, 3),
+            "total_dt_ratio_range": (0.35, 0.75),
+            "min_dt_sec": 0.30,
+            "min_fst_sec": 0.15,
+        },
+
         # -----------------------------
         # STFT
         # -----------------------------
@@ -71,32 +79,26 @@ def get_config():
         },
 
         # -----------------------------
-        # 训练数据规模
-        # -----------------------------
-        "train_num_samples": 200,
-        "val_num_samples": 40,
+        "train_num_samples": 1000,
+        "val_num_samples": 200,
 
-        # -----------------------------
-        # dataloader
-        # -----------------------------
         "batch_size": 4,
         "num_workers": 0,
+
+        "train": {
+            "epochs": 30,
+            "lr": 1e-3,
+            "weight_decay": 0.0,
+            "save_every_epoch": True,
+            "early_stopping_patience": 5,
+            "early_stopping_min_delta": 1e-4,
+        },
 
         # -----------------------------
         # 模型
         # -----------------------------
         "model": {
             "lstm_hidden": 128,
-        },
-
-        # -----------------------------
-        # 训练
-        # -----------------------------
-        "train": {
-            "epochs": 10,
-            "lr": 1e-3,
-            "weight_decay": 0.0,
-            "save_every_epoch": True,
         },
 
         # -----------------------------

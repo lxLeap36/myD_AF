@@ -153,6 +153,11 @@ def main():
         lr=cfg["train"]["lr"],
         weight_decay=cfg["train"]["weight_decay"],
     )
+    # early stopping 配置
+    patience = cfg["train"].get("early_stopping_patience", 5)
+    min_delta = cfg["train"].get("early_stopping_min_delta", 1e-4)
+    bad_epochs = 0
+    last_epoch_trained = 0
 
     history = {
         "train_loss": [],
@@ -181,8 +186,13 @@ def main():
 
         print(f"[Epoch {epoch:03d}/{epochs:03d}] train_loss={train_loss:.6f} val_loss={val_loss:.6f}")
 
-        if val_loss < best_val:
+        last_epoch_trained = epoch
+
+        improved = val_loss < (best_val - min_delta)
+
+        if improved:
             best_val = val_loss
+            bad_epochs = 0
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
@@ -194,6 +204,25 @@ def main():
                 best_path,
             )
             print(f"  -> saved best model to: {best_path}")
+        else:
+            bad_epochs += 1
+            print(f"  -> no improvement for {bad_epochs}/{patience} epoch(s)")
+
+        if cfg["train"]["save_every_epoch"]:
+            epoch_path = os.path.join(ckpt_dir, f"epoch_{epoch:03d}.pt")
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "config": cfg,
+                    "num_freq_bins": f0,
+                    "epoch": epoch,
+                },
+                epoch_path,
+            )
+
+        if bad_epochs >= patience:
+            print(f"Early stopping triggered at epoch {epoch}.")
+            break
 
         if cfg["train"]["save_every_epoch"]:
             epoch_path = os.path.join(ckpt_dir, f"epoch_{epoch:03d}.pt")
@@ -212,7 +241,7 @@ def main():
             "model_state_dict": model.state_dict(),
             "config": cfg,
             "num_freq_bins": f0,
-            "epoch": epochs,
+            "epoch": last_epoch_trained,
         },
         last_path,
     )
@@ -226,6 +255,9 @@ def main():
             "device_used": device.type,
             "num_freq_bins": int(f0),
             "num_time_frames_example": int(t0),
+            "actual_epochs_trained": int(last_epoch_trained),
+            "early_stopping_patience": int(patience),
+            "early_stopping_min_delta": float(min_delta),
         },
         os.path.join(cfg["output_dir"], "train_summary.json"),
     )
