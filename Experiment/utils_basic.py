@@ -13,6 +13,7 @@ from Scenarios.farend_single_talk import generate_farend_single_talk
 from Scenarios.noisy_single_talk import generate_noisy_single_talk
 from Scenarios.double_talk import generate_double_talk
 from Scenarios.path_change import generate_path_change
+from Scenarios.common import sample_random_double_talk_segments
 
 from Tools.data_loader import (
     sample_far_end,
@@ -59,34 +60,24 @@ def load_audio_full(path: Union[str, Path], fs: int = 16000, mono: bool = True):
     return wav.astype(np.float32)
 
 
-def find_first_audio_file(directory: Path):
-    """
-    找目录中的第一个音频文件
-    """
-    candidates = []
-    for ext in [".wav", ".flac"]:
-        candidates.extend(sorted(directory.rglob(f"*{ext}")))
-
-    if len(candidates) == 0:
-        raise RuntimeError(f"No audio files found in {directory}")
-
-    return candidates[0]
-
-
-def load_rir(cfg):
+def sample_rir(cfg, seed=None):
     """
     读取 RIR：
     - 如果 cfg["rir_path"] 指定了路径，优先使用
-    - 否则取 rir_dir 下第一个音频文件
+    - 否则从 rir_dir 下随机采样一条 RIR
     """
-    rir_path = cfg["rir_path"]
+    rir_path = cfg.get("rir_path", None)
 
     if rir_path is None:
-        rir_path = find_first_audio_file(Path(cfg["rir_dir"]))
+        rir_files = list_audio_files(cfg["rir_dir"])
+        if len(rir_files) == 0:
+            raise RuntimeError(f"No RIR files found in {cfg['rir_dir']}")
+
+        rng = np.random.default_rng(seed)
+        rir_path = rir_files[int(rng.integers(0, len(rir_files)))]
 
     rir = load_audio_full(rir_path, fs=cfg["fs"], mono=True)
     return rir, str(rir_path)
-
 
 def sample_babble_noise_segment(noise_dir, duration_sec, fs, seed=None):
     """
@@ -214,7 +205,7 @@ def build_scenario(cfg):
     near_end = None
     near_meta = None
 
-    rir, rir_path = load_rir(cfg)
+    rir, rir_path = sample_rir(cfg, seed=seed + 10)
 
     extra_meta = {
         "far_meta": far_meta,
@@ -296,16 +287,32 @@ def build_scenario(cfg):
             energy_threshold_ratio=near_pp["energy_threshold_ratio"],
         )
 
+        seg_cfg = cfg.get("double_talk_segment_cfg", {})
+        seg_mode = seg_cfg.get("mode", "random")
+
+        if seg_mode == "random":
+            segments = sample_random_double_talk_segments(
+                duration_sec=duration_sec,
+                seed=seed + 20,
+                num_dt_range=seg_cfg.get("num_dt_range", (1, 3)),
+                total_dt_ratio_range=seg_cfg.get("total_dt_ratio_range", (0.35, 0.75)),
+                min_dt_sec=seg_cfg.get("min_dt_sec", 0.30),
+                min_fst_sec=seg_cfg.get("min_fst_sec", 0.15),
+            )
+        else:
+            segments = None
+
         sample = generate_double_talk(
             far_end=far_end,
             near_end=near_end,
             rir=rir,
             fs=fs,
             ser_db=cfg["ser_db"],
-            segments=None,
+            segments=segments,
             normalize=True,
             peak=0.95,
         )
+
         extra_meta["near_meta"] = near_meta
         sample["meta"]["extra"] = extra_meta
         return sample
