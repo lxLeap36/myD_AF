@@ -46,15 +46,11 @@ class DTMaskedWeightedSpectralL1Loss(nn.Module):
     """
     训练时利用 double-talk mask 的加权谱损失。
 
-    输入:
-        pred   : [B, T, F]
-        target : [B, T, F]
-        dt_mask: [B, T]   (soft mask, 范围约 [0,1])
-
-    思路:
-    1) 保留“target 能量越大，权重越高”
-    2) 在 dt 帧上再提高监督权重
-    3) non-dt 帧保留较小权重，而不是完全忽略
+    改进点：
+    1) 仍然逐 (B,T,F) 格子计算绝对误差
+    2) 仍然保留 target 能量加权 + dt_mask 时间加权
+    3) 但最后不用简单 mean，而改成“按总权重归一化”的加权平均
+       这样 loss 数值不会随着 dt/non-dt 占比和权重绝对值变化而乱漂
     """
 
     def __init__(
@@ -81,14 +77,20 @@ class DTMaskedWeightedSpectralL1Loss(nn.Module):
         target : [B, T, F]
         dt_mask: [B, T]
         """
-        # 频谱能量加权
+        # 每个样本内部按 target 最大值做归一化
         target_norm = target / (target.amax(dim=(1, 2), keepdim=True) + self.eps)
-        spectral_weight = 1.0 + self.alpha * target_norm  # [B,T,F]
+        spectral_weight = 1.0 + self.alpha * target_norm          # [B,T,F]
 
-        # 时间维 mask 加权
-        # dt 帧权重大，非 dt 帧保留较小权重
+        # dt 帧与 non-dt 帧的时间权重
         time_weight = self.non_dt_weight + (self.dt_weight - self.non_dt_weight) * dt_mask
-        time_weight = time_weight.unsqueeze(-1)  # [B,T,1]
+        time_weight = time_weight.unsqueeze(-1)                   # [B,T,1]
 
-        loss = torch.abs(pred - target) * spectral_weight * time_weight
-        return loss.mean()
+        # 总权重
+        weight = spectral_weight * time_weight                    # [B,T,F]
+
+        abs_err = torch.abs(pred - target)                       # [B,T,F]
+        weighted_loss = abs_err * weight
+
+        # 关键：用权重和归一化，而不是直接 mean
+        loss = weighted_loss.sum() / (weight.sum() + self.eps)
+        return loss
