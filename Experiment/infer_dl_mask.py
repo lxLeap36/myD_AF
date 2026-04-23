@@ -91,7 +91,7 @@ def main():
 
     # 使用同一条 raw sample 来生成特征和评估目标，避免不一致
     raw_sample = dataset.get_raw_sample(cfg["inference"]["sample_index"])
-    input_feat, target_logmag, dt_mask_frame, meta = dataset.sample_to_example(raw_sample) # 这里返回的就是对数幅度特征了
+    input_feat, target_logmag, dt_mask_frame, meta = dataset.sample_to_example(raw_sample)
 
     x = torch.tensor(raw_sample["x"], dtype=torch.float32)
     d = torch.tensor(raw_sample["d"], dtype=torch.float32)
@@ -100,7 +100,8 @@ def main():
     input_feat_b = input_feat.unsqueeze(0).to(device)   # [1,2,T,F]
 
     with torch.no_grad():
-        pred_logmag = model(input_feat_b)[0].cpu()      # [T,F]
+        # 模型输出解释为 mask M (非负)，形状 [B, T, F]
+        pred_mask = model(input_feat_b)[0].cpu()      # [T,F]
 
     # 还原 STFT 所需参数
     stft_cfg = cfg["stft"]
@@ -113,15 +114,16 @@ def main():
     D = stft_complex(d, n_fft, hop_length, win_length, window)   # [F,T], complex
     D_phase = torch.angle(D)                                     # [F,T]
 
-    # pred_logmag: [T,F] -> [F,T]
-    pred_logmag_ft = pred_logmag.transpose(0, 1).contiguous()
+    # Mask: [T,F] -> [F,T]
+    pred_mask_ft = pred_mask.transpose(0, 1).contiguous()        # [F,T]
 
-    # log1p(|S_hat|) -> |S_hat|
-    pred_logmag = torch.expm1(pred_logmag_ft)
-    pred_logmag = torch.clamp(pred_logmag, min=0.0)
+    # 使用 D 的幅度（线性）乘以 mask 得到预测的谱幅度（线性）
+    D_mag = torch.abs(D)                                         # [F,T]
+    pred_mag_lin = pred_mask_ft * D_mag                              # [F,T]
+    pred_mag_lin = torch.clamp(pred_mag_lin, min=0.0)
 
     # 与 D 相位组合
-    S_hat_complex = mag_phase_to_complex(pred_logmag, D_phase)
+    S_hat_complex = mag_phase_to_complex(pred_mag_lin, D_phase)
 
     # iSTFT -> s_hat
     s_hat = istft_complex(
@@ -154,13 +156,14 @@ def main():
     sf.write(os.path.join(out_dir, "clean_near_s.wav"), s_np, cfg["sample_rate"])
     sf.write(os.path.join(out_dir, "pred_near_s_hat.wav"), s_hat, cfg["sample_rate"])
 
+    # 保存预测结果：对于 mask 形式，保存 pred_mask 供后续分析
     np.savez(
         os.path.join(out_dir, "inference_arrays.npz"),
         x=x_np,
         d=d_np,
         s=s_np,
         s_hat=s_hat,
-        pred_logmag=pred_logmag.numpy(),
+        pred_logmag=pred_mag_lin.numpy(),
         target_logmag=target_logmag.numpy(),
         dt_mask_frame=dt_mask_frame.numpy(),
     )
@@ -173,7 +176,8 @@ def main():
     ax1.set_ylabel("Freq bin")
 
     ax2 = fig.add_subplot(3, 1, 2)
-    ax2.imshow(pred_logmag.numpy().T, aspect="auto", origin="lower")
+    # 展示预测的 mask
+    ax2.imshow(pred_mag_lin.numpy().T, aspect="auto", origin="lower")
     ax2.set_title("Predicted log1p(|S_hat|)")
     ax2.set_ylabel("Freq bin")
 
