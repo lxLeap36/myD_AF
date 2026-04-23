@@ -105,7 +105,9 @@ def get_config():
         # 推理
         # -----------------------------
         "inference": {
-            "checkpoint_path": None,  # None 时默认找 best_model.pt
+            "checkpoint_path":
+                os.path.join(root_dir, "Results", "results_dl_mask", "checkpoints", "best_model_mask.pt"),
+                                                                                    # None 时默认找 best_model.pt
             "sample_index": 0,
         },
     }
