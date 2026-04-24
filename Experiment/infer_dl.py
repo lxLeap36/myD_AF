@@ -117,13 +117,13 @@ def main():
     pred_logmag_ft = pred_logmag.transpose(0, 1).contiguous()
 
     # log1p(|S_hat|) -> |S_hat|
-    pred_logmag = torch.expm1(pred_logmag_ft)
-    pred_logmag = torch.clamp(pred_logmag, min=0.0)
+    pred_linmag = torch.expm1(pred_logmag_ft)
+    pred_linmag = torch.clamp(pred_linmag, min=0.0)
 
     # 与 D 相位组合
-    S_hat_complex = mag_phase_to_complex(pred_logmag, D_phase)
+    S_hat_complex = mag_phase_to_complex(pred_linmag, D_phase)
 
-    # iSTFT -> s_hat
+    # iSTFT -> s_hat (使用 D 相位)
     s_hat = istft_complex(
         S_hat_complex,
         n_fft=n_fft,

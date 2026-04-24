@@ -11,7 +11,7 @@ def get_config():
         "seed": 42,
         "device": "cuda",   # 若无 CUDA，可改成 "cpu"
         "root_dir": root_dir,
-        "output_dir": os.path.join(root_dir, "Results", "results_dl"),
+        "output_dir": os.path.join(root_dir, "Results", "results_dl_mask"),
 
         # -----------------------------
         # 数据 / 场景
