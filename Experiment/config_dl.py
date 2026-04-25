@@ -114,8 +114,8 @@ def get_config():
         "train_num_samples": 1000,
         "val_num_samples": 200,
 
-        "batch_size": 16,
-        "num_workers": 4,
+        "batch_size": 8,
+        "num_workers": 2,
 
         "train": {
             "epochs": 40,

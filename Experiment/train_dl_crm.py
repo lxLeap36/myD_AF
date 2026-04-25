@@ -77,30 +77,33 @@ def run_one_epoch(
     total_loss = 0.0
     total_count = 0
 
-    for batch in loader:
-        input_feat, target_ri, dt_mask, _ = move_batch_to_device(batch, device)
+    grad_context = torch.enable_grad() if is_train else torch.no_grad()
 
-        if is_train:
-            optimizer.zero_grad()
+    with grad_context:
+        for batch in loader:
+            input_feat, target_ri, dt_mask, _ = move_batch_to_device(batch, device)
 
-        pred_flat = model(input_feat)                               # [B, T, 2F]
-        pred_mask_ri = unpack_model_output_to_mask_ri(pred_flat, num_freq_bins)   # [B,2,T,F]
+            if is_train:
+                optimizer.zero_grad(set_to_none=True)
 
-        d_ri = input_feat[:, 0:2, :, :]                             # [B,2,T,F]
-        pred_s_ri = apply_complex_mask_ri(pred_mask_ri, d_ri)       # [B,2,T,F]
+            pred_flat = model(input_feat)                                     # [B, T, 2F]
+            pred_mask_ri = unpack_model_output_to_mask_ri(pred_flat, num_freq_bins)
+            d_ri = input_feat[:, 0:2, :, :]
+            pred_s_ri = apply_complex_mask_ri(pred_mask_ri, d_ri)
 
-        loss = criterion(pred_s_ri, target_ri, dt_mask)
+            loss = criterion(pred_s_ri, target_ri, dt_mask)
 
-        if is_train:
-            loss.backward()
-            optimizer.step()
+            if is_train:
+                loss.backward()
+                optimizer.step()
 
-        bsz = input_feat.size(0)
-        total_loss += loss.item() * bsz
-        total_count += bsz
+            bsz = input_feat.size(0)
+            total_loss += loss.item() * bsz
+            total_count += bsz
 
-    mean_loss = total_loss / max(total_count, 1)
-    return mean_loss
+            del input_feat, target_ri, dt_mask, pred_flat, pred_mask_ri, d_ri, pred_s_ri, loss
+
+    return total_loss / max(total_count, 1)
 
 
 def main():
@@ -213,6 +216,8 @@ def main():
             num_freq_bins=f0,
             optimizer=optimizer,
         )
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
         val_loss = run_one_epoch(
             model=model,
@@ -222,6 +227,8 @@ def main():
             num_freq_bins=f0,
             optimizer=None,
         )
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
         history["train_loss"].append(float(train_loss))
         history["val_loss"].append(float(val_loss))
