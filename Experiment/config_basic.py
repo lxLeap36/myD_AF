@@ -23,8 +23,8 @@ CONFIG = {
     "far_speech_dir": ROOT_DIR / "Dataset" / "clean_speech1",
     "near_speech_dir": ROOT_DIR / "Dataset" / "clean_speech2",
     "babble_noise_dir": ROOT_DIR / "Dataset" / "Noise" / "babble_noise",
-    #"rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "smallroom" / "Room001",
-    "rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "easy_8rir",
+    "rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "smallroom" / "Room200",
+    #"rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "easy_8rir",
 
     # 若手动指定某一条 RIR 文件，填完整路径；否则设为 None
     #"rir_path": ROOT_DIR / "Dataset" / "simulated_rirs" / "easy_8rir",

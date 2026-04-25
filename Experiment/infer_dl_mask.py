@@ -224,7 +224,7 @@ def main():
         s_hat_Sphase_t, n_fft, hop_length, win_length, window
     )
 
-    # 6) 真正的 S 的时频图
+    # 6) 真正的 S 的时频图，其实这个画的也是对数幅度谱，只是这是由真正的s来的，前面的是由s_hat_Sphase_t、s_hat_Dphase_t来的
     logmag_trueS_tf, _ = compute_logmag_tf_from_waveform(
         s, n_fft, hop_length, win_length, window
     )

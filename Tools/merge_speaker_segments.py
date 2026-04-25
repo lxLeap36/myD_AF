@@ -8,16 +8,16 @@ import soundfile as sf
 # =========================
 # 路径配置
 # =========================
-INPUT_DIR = Path(r"/Dataset/04")
-OUTPUT_DIR = Path(r"D:\pyProject\myD_AF\Dataset\clean_speech2")
-OUTPUT_NAME = "speaker04_2min.wav"
+INPUT_DIR = Path(r"D:\pyProject\myD_AF\Dataset\06")
+OUTPUT_DIR = Path(r"D:\pyProject\myD_AF\Dataset\clean_speech_test2")
+OUTPUT_NAME = "speaker06_22min.wav"
 
 
 # =========================
 # 参数配置
 # =========================
 SILENCE_THRESHOLD_DB = -40.0   # 静音阈值（相对峰值）
-MAX_INTERNAL_SILENCE_SEC = 0.001 # 内部连续静音超过这个时长就裁短
+MAX_INTERNAL_SILENCE_SEC = 0.5 # 内部连续静音超过这个时长就裁短
 MIN_KEEP_SEC = 0             # 如果整段都很安静，至少保留这么长
 CROSSFADE_MS = 10.0            # 片段拼接处做一个很短的淡入淡出，减少爆音
 
@@ -123,13 +123,8 @@ def preprocess_clip(
     wav: np.ndarray,
     fs: int,
     silence_threshold_db: float = -40.0,
-    max_internal_silence_sec: float = 0.001,
+    max_internal_silence_sec: float | None = None,
 ) -> np.ndarray:
-    """
-    单个片段预处理：
-    1. 去首尾长静音
-    2. 压缩内部过长静音
-    """
     wav = trim_edges_silence(
         wav,
         fs=fs,
@@ -137,12 +132,13 @@ def preprocess_clip(
         min_keep_sec=MIN_KEEP_SEC,
     )
 
-    wav = compress_long_internal_silence(
-        wav,
-        fs=fs,
-        silence_threshold_db=silence_threshold_db,
-        max_silence_sec=max_internal_silence_sec,
-    )
+    if max_internal_silence_sec is not None:
+        wav = compress_long_internal_silence(
+            wav,
+            fs=fs,
+            silence_threshold_db=silence_threshold_db,
+            max_silence_sec=max_internal_silence_sec,
+        )
 
     return wav.astype(np.float32)
 
