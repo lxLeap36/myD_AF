@@ -6,25 +6,39 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 from Experiment.utils_basic import build_scenario
-from Training.audio_features import stft_complex
+from Training.audio_features import stft_complex, complex_to_ri_channels
 
 
 class DoubleTalkSTFTDataset(Dataset):
     """
-    在线生成 double_talk 场景样本，并转换成最小 STFT-domain 训练样本。
+    在线生成 double_talk 场景样本，并转换成 STFT-domain 训练样本。
 
+    feature_mode = "logmag"
+    --------------------------------
     输出:
         input_feat   : [2, T, F]
             channel 0 = log1p(|D|)
             channel 1 = log1p(|X|)
 
-        target_mag   : [T, F]
+        target_feat  : [T, F]
             log1p(|S|)
 
         dt_mask_frame: [T]
-            double-talk 帧级 soft mask，范围大致在 [0, 1]
 
-        meta_dict    : 额外信息（可选调试）
+    feature_mode = "crm_ri"
+    --------------------------------
+    输出:
+        input_feat   : [4, T, F]
+            channel 0 = D_r
+            channel 1 = D_i
+            channel 2 = X_r
+            channel 3 = X_i
+
+        target_feat  : [2, T, F]
+            channel 0 = S_r
+            channel 1 = S_i
+
+        dt_mask_frame: [T]
     """
 
     def __init__(
@@ -33,12 +47,14 @@ class DoubleTalkSTFTDataset(Dataset):
         num_samples: int,
         split: str = "train",
         max_build_retries: int = 20,
+        feature_mode: str = "logmag",
     ):
         super().__init__()
         self.base_cfg = copy.deepcopy(base_cfg)
         self.num_samples = int(num_samples)
         self.split = split
         self.max_build_retries = int(max_build_retries)
+        self.feature_mode = feature_mode
 
         stft_cfg = self.base_cfg["stft"]
         self.n_fft = int(stft_cfg["n_fft"])
@@ -49,6 +65,9 @@ class DoubleTalkSTFTDataset(Dataset):
 
         # 让 train / val 至少种子区间不同
         self.seed_offset = 0 if split == "train" else 100000
+
+        if self.feature_mode not in ("logmag", "crm_ri"):
+            raise ValueError(f"Unsupported feature_mode: {self.feature_mode}")
 
     def __len__(self):
         return self.num_samples
@@ -90,11 +109,6 @@ class DoubleTalkSTFTDataset(Dataset):
     def _time_mask_to_frame_mask(self, mask_1d: torch.Tensor, num_frames: int) -> torch.Tensor:
         """
         把时域 [N] mask 映射成帧级 [T] soft mask。
-
-        做法：
-        - 按 STFT 的 center=True 近似做左右 padding
-        - 用 win_length 窗口、hop_length 步长对 mask 做 unfold
-        - 每帧取窗口平均值，得到 [0, 1] 的 soft mask
         """
         mask_1d = mask_1d.float()
         if mask_1d.ndim != 1:
@@ -110,12 +124,14 @@ class DoubleTalkSTFTDataset(Dataset):
             x = F.pad(x, (0, needed_len - cur_len))
 
         frames = x.unfold(dimension=-1, size=self.win_length, step=self.hop_length)
-        # [1,1,T,win]
         frame_mask = frames[0, 0, :num_frames].mean(dim=-1)  # [T]
         frame_mask = torch.clamp(frame_mask, 0.0, 1.0)
         return frame_mask
 
-    def sample_to_example(self, sample: Dict[str, Any]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, Any]]:
+    def sample_to_example(
+        self,
+        sample: Dict[str, Any]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, Any]]:
         x = torch.tensor(sample["x"], dtype=torch.float32)   # far-end
         d = torch.tensor(sample["d"], dtype=torch.float32)   # mic
         s = torch.tensor(sample["s"], dtype=torch.float32)   # clean near-end
@@ -124,17 +140,23 @@ class DoubleTalkSTFTDataset(Dataset):
         D = stft_complex(d, self.n_fft, self.hop_length, self.win_length, self.window)
         S = stft_complex(s, self.n_fft, self.hop_length, self.win_length, self.window)
 
-        X_mag = torch.log1p(torch.abs(X))   # [F, T]
-        D_mag = torch.log1p(torch.abs(D))   # [F, T]
-        S_mag = torch.log1p(torch.abs(S))   # [F, T]
+        if self.feature_mode == "logmag":
+            X_feat = torch.log1p(torch.abs(X)).transpose(0, 1).contiguous()   # [T, F]
+            D_feat = torch.log1p(torch.abs(D)).transpose(0, 1).contiguous()   # [T, F]
+            S_feat = torch.log1p(torch.abs(S)).transpose(0, 1).contiguous()   # [T, F]
 
-        X_mag = X_mag.transpose(0, 1).contiguous()   # [T, F]
-        D_mag = D_mag.transpose(0, 1).contiguous()   # [T, F]
-        S_mag = S_mag.transpose(0, 1).contiguous()   # [T, F]
+            input_feat = torch.stack([D_feat, X_feat], dim=0)                 # [2, T, F]
+            target_feat = S_feat                                              # [T, F]
 
-        input_feat = torch.stack([D_mag, X_mag], dim=0)  # [2, T, F]
+        else:  # crm_ri
+            X_ri = complex_to_ri_channels(X)   # [2, T, F]
+            D_ri = complex_to_ri_channels(D)   # [2, T, F]
+            S_ri = complex_to_ri_channels(S)   # [2, T, F]
 
-        # 取 double-talk 时域 mask -> 帧级 soft mask
+            input_feat = torch.cat([D_ri, X_ri], dim=0)  # [4, T, F]
+            target_feat = S_ri                           # [2, T, F]
+
+        # double-talk 时域 mask -> 帧级 soft mask
         masks = sample.get("masks", {})
         dt_mask_time = torch.tensor(
             masks.get("double_talk_mask", torch.zeros(len(d))),
@@ -142,8 +164,8 @@ class DoubleTalkSTFTDataset(Dataset):
         )
         dt_mask_frame = self._time_mask_to_frame_mask(
             dt_mask_time,
-            num_frames=S_mag.shape[0],
-        )  # [T]
+            num_frames=target_feat.shape[-2],  # [T] 所在维
+        )
 
         extra_meta = sample.get("meta", {}).get("extra", {})
         far_meta = extra_meta.get("far_meta", {}) or {}
@@ -155,9 +177,10 @@ class DoubleTalkSTFTDataset(Dataset):
             "near_path": near_meta.get("file_path"),
             "far_activity_ratio": far_meta.get("activity_ratio"),
             "near_activity_ratio": near_meta.get("activity_ratio"),
+            "feature_mode": self.feature_mode,
         }
 
-        return input_feat, S_mag, dt_mask_frame, meta
+        return input_feat, target_feat, dt_mask_frame, meta
 
     def __getitem__(self, idx: int):
         sample = self.build_valid_sample(idx)

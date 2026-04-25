@@ -94,3 +94,68 @@ class DTMaskedWeightedSpectralL1Loss(nn.Module):
         # 关键：用权重和归一化，而不是直接 mean
         loss = weighted_loss.sum() / (weight.sum() + self.eps)
         return loss
+
+class DTMaskedComplexRIL1Loss(nn.Module):
+    """
+    CRM 训练用的复谱 RI 加权 L1 损失。
+
+    pred_ri   : [B, 2, T, F]
+    target_ri : [B, 2, T, F]
+    dt_mask   : [B, T]
+
+    设计思路：
+    1) 在实部/虚部上做 L1
+    2) 权重参考 target 的复谱幅度 |S|
+    3) 继续使用 dt_mask 的时间加权
+    4) 最后按总权重归一化，避免比例漂移
+    """
+
+    def __init__(
+        self,
+        alpha: float = 4.0,
+        dt_weight: float = 4.0,
+        non_dt_weight: float = 0.25,
+        eps: float = 1e-8,
+    ):
+        super().__init__()
+        self.alpha = float(alpha)
+        self.dt_weight = float(dt_weight)
+        self.non_dt_weight = float(non_dt_weight)
+        self.eps = float(eps)
+
+    def forward(
+        self,
+        pred_ri: torch.Tensor,
+        target_ri: torch.Tensor,
+        dt_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        pred_ri   : [B, 2, T, F]
+        target_ri : [B, 2, T, F]
+        dt_mask   : [B, T]
+        """
+        if pred_ri.shape != target_ri.shape:
+            raise ValueError(f"Shape mismatch: {pred_ri.shape} vs {target_ri.shape}")
+
+        if pred_ri.ndim != 4 or pred_ri.shape[1] != 2:
+            raise ValueError("pred_ri / target_ri must be [B, 2, T, F]")
+
+        # 目标复谱幅度 |S|
+        target_mag = torch.sqrt(target_ri[:, 0] ** 2 + target_ri[:, 1] ** 2 + self.eps)  # [B,T,F]
+
+        # 频谱能量权重
+        target_norm = target_mag / (target_mag.amax(dim=(1, 2), keepdim=True) + self.eps)
+        spectral_weight = 1.0 + self.alpha * target_norm   # [B,T,F]
+
+        # dt / non-dt 时间权重
+        time_weight = self.non_dt_weight + (self.dt_weight - self.non_dt_weight) * dt_mask
+        time_weight = time_weight.unsqueeze(-1)            # [B,T,1]
+
+        weight = spectral_weight * time_weight             # [B,T,F]
+        weight_ri = weight.unsqueeze(1).expand_as(pred_ri) # [B,2,T,F]
+
+        abs_err = torch.abs(pred_ri - target_ri)
+        weighted_loss = abs_err * weight_ri
+
+        loss = weighted_loss.sum() / (weight_ri.sum() + self.eps)
+        return loss

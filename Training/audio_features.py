@@ -86,3 +86,110 @@ def istft_complex(
         center=True,
         length=length,
     )
+
+def complex_to_ri_channels(spec: torch.Tensor) -> torch.Tensor:
+    """
+    Convert complex spectrogram to real/imag channels.
+
+    Args:
+        spec:
+            [F, T] or [B, F, T], complex
+
+    Returns:
+        ri:
+            [2, T, F] or [B, 2, T, F], float
+            channel 0 = real
+            channel 1 = imag
+    """
+    if not torch.is_complex(spec):
+        raise TypeError("spec must be a complex tensor.")
+
+    if spec.ndim == 2:
+        real = spec.real.transpose(0, 1).contiguous()   # [T, F]
+        imag = spec.imag.transpose(0, 1).contiguous()   # [T, F]
+        return torch.stack([real, imag], dim=0)         # [2, T, F]
+
+    if spec.ndim == 3:
+        real = spec.real.transpose(1, 2).contiguous()   # [B, T, F]
+        imag = spec.imag.transpose(1, 2).contiguous()   # [B, T, F]
+        return torch.stack([real, imag], dim=1)         # [B, 2, T, F]
+
+    raise ValueError(f"Unsupported spec ndim: {spec.ndim}")
+
+
+def ri_channels_to_complex(ri: torch.Tensor) -> torch.Tensor:
+    """
+    Convert real/imag channels back to complex spectrogram.
+
+    Args:
+        ri:
+            [2, T, F] or [B, 2, T, F]
+
+    Returns:
+        spec:
+            [F, T] or [B, F, T], complex
+    """
+    if ri.ndim == 3:
+        if ri.shape[0] != 2:
+            raise ValueError("For 3-D input, shape must be [2, T, F].")
+        real = ri[0].transpose(0, 1).contiguous()   # [F, T]
+        imag = ri[1].transpose(0, 1).contiguous()   # [F, T]
+        return torch.complex(real, imag)
+
+    if ri.ndim == 4:
+        if ri.shape[1] != 2:
+            raise ValueError("For 4-D input, shape must be [B, 2, T, F].")
+        real = ri[:, 0].transpose(1, 2).contiguous()   # [B, F, T]
+        imag = ri[:, 1].transpose(1, 2).contiguous()   # [B, F, T]
+        return torch.complex(real, imag)
+
+    raise ValueError(f"Unsupported ri ndim: {ri.ndim}")
+
+
+def apply_complex_mask_ri(mask_ri: torch.Tensor, d_ri: torch.Tensor) -> torch.Tensor:
+    """
+    Apply complex ratio mask on real/imag channels.
+
+    Args:
+        mask_ri:
+            [2, T, F] or [B, 2, T, F]
+            channel 0 = M_r
+            channel 1 = M_i
+
+        d_ri:
+            [2, T, F] or [B, 2, T, F]
+            channel 0 = D_r
+            channel 1 = D_i
+
+    Returns:
+        s_hat_ri:
+            same shape as input, representing:
+                S_hat = M_c * D
+    """
+    squeeze_back = False
+
+    if mask_ri.ndim == 3:
+        mask_ri = mask_ri.unsqueeze(0)
+        d_ri = d_ri.unsqueeze(0)
+        squeeze_back = True
+
+    if mask_ri.ndim != 4 or d_ri.ndim != 4:
+        raise ValueError("mask_ri and d_ri must be [2,T,F] or [B,2,T,F].")
+
+    if mask_ri.shape != d_ri.shape:
+        raise ValueError(f"Shape mismatch: {mask_ri.shape} vs {d_ri.shape}")
+
+    mr = mask_ri[:, 0]   # [B, T, F]
+    mi = mask_ri[:, 1]
+    dr = d_ri[:, 0]
+    di = d_ri[:, 1]
+
+    sr = mr * dr - mi * di
+    si = mr * di + mi * dr
+
+    out = torch.stack([sr, si], dim=1)   # [B, 2, T, F]
+
+    if squeeze_back:
+        out = out[0]
+
+    return out
