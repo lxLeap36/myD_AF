@@ -11,7 +11,7 @@ def get_config():
         "seed": 42,
         "device": "cuda",   # 若无 CUDA，可改成 "cpu"
         "root_dir": root_dir,
-        "output_dir": os.path.join(root_dir, "Results", "results_dl_crm"),
+        "output_dir": os.path.join(root_dir, "Results", "results_dl_crm_test1"),
         # "output_dir": os.path.join(root_dir, "Results", "results_dl_mask_test2"),  # 测试用，实际训练时改回上面这一行
 
         # -----------------------------
@@ -26,13 +26,13 @@ def get_config():
         # ===== 对齐 Experiment.utils_basic 的 build_scenario 关键字 =====
         "scenario_name": "double_talk",
         "ser_db": 0.0,
-        "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),
-        "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech2"),
-        "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom"),
+        # "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),
+        # "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech2"),
+        # "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom"),
         # 测试数据路径，实际训练时可改成上面两行
-        # "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test1"),
-        # "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test2"),
-        # "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom", "Room200"),
+        "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test1"),
+        "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test2"),
+        "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom", "Room200"),
 
         "babble_noise_dir": os.path.join(root_dir, "Dataset", "Noise", "babble_noise"),
         "fs": 16000,
@@ -42,38 +42,12 @@ def get_config():
         # 新增：统一的语音预处理配置
         # far / near 分开配
         # -----------------------------
-        "speech_preprocess": {
-            "far": {
-                "trim_mode": "active",
-                "silence_threshold_db": -40.0,
-                "max_internal_silence_sec": 0.30,
-                "min_activity_ratio": 0.10,
-                "min_rms_db": -45.0,
-                "max_trials": 50,
-                "frame_len_ms": 25.0,
-                "hop_len_ms": 10.0,
-                "energy_threshold_ratio": None,
-            },
-            "near": {
-                "trim_mode": "active",
-                "silence_threshold_db": -40.0,
-                "max_internal_silence_sec": 0.001,
-                "min_activity_ratio": 0.35,
-                "min_rms_db": -45.0,
-                "max_trials": 80,
-                "frame_len_ms": 25.0,
-                "hop_len_ms": 10.0,
-                "energy_threshold_ratio": None,
-            },
-        },
-
-        # 测试时调整的预处理配置，实际训练时可改回上面这一段
         # "speech_preprocess": {
         #     "far": {
         #         "trim_mode": "active",
         #         "silence_threshold_db": -40.0,
-        #         "max_internal_silence_sec": 0.50,
-        #         "min_activity_ratio": 0.05,
+        #         "max_internal_silence_sec": 0.30,
+        #         "min_activity_ratio": 0.10,
         #         "min_rms_db": -45.0,
         #         "max_trials": 50,
         #         "frame_len_ms": 25.0,
@@ -83,8 +57,8 @@ def get_config():
         #     "near": {
         #         "trim_mode": "active",
         #         "silence_threshold_db": -40.0,
-        #         "max_internal_silence_sec": 0.50,
-        #         "min_activity_ratio": 0.05,
+        #         "max_internal_silence_sec": 0.001,
+        #         "min_activity_ratio": 0.35,
         #         "min_rms_db": -45.0,
         #         "max_trials": 80,
         #         "frame_len_ms": 25.0,
@@ -92,6 +66,32 @@ def get_config():
         #         "energy_threshold_ratio": None,
         #     },
         # },
+
+        # 测试时调整的预处理配置，实际训练时可改回上面这一段
+        "speech_preprocess": {
+            "far": {
+                "trim_mode": "active",
+                "silence_threshold_db": -40.0,
+                "max_internal_silence_sec": 0.50,
+                "min_activity_ratio": 0.05,
+                "min_rms_db": -45.0,
+                "max_trials": 50,
+                "frame_len_ms": 25.0,
+                "hop_len_ms": 10.0,
+                "energy_threshold_ratio": None,
+            },
+            "near": {
+                "trim_mode": "active",
+                "silence_threshold_db": -40.0,
+                "max_internal_silence_sec": 0.50,
+                "min_activity_ratio": 0.05,
+                "min_rms_db": -45.0,
+                "max_trials": 80,
+                "frame_len_ms": 25.0,
+                "hop_len_ms": 10.0,
+                "energy_threshold_ratio": None,
+            },
+        },
 
         "double_talk_segment_cfg": {
             "mode": "random",

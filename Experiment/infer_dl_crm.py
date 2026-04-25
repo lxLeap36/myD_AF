@@ -75,7 +75,7 @@ def main():
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-    out_dir = os.path.join(crm_output_dir, "inference_crm")
+    out_dir = os.path.join(cfg["output_dir"], "inference_crm")
     ensure_dir(out_dir)
 
     checkpoint = torch.load(ckpt_path, map_location="cpu")
