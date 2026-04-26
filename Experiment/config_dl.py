@@ -26,13 +26,13 @@ def get_config():
         # ===== 对齐 Experiment.utils_basic 的 build_scenario 关键字 =====
         "scenario_name": "double_talk",
         "ser_db": 0.0,
-        # "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),
-        # "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech2"),
-        # "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom"),
+        "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),
+        "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech2"),
+        "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom"),
         # 测试数据路径，实际训练时可改成上面两行
-        "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test1"),
-        "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test2"),
-        "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom", "Room200"),
+        # "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test1"),
+        # "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test2"),
+        # "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom", "Room200"),
 
         "babble_noise_dir": os.path.join(root_dir, "Dataset", "Noise", "babble_noise"),
         "fs": 16000,
@@ -114,11 +114,11 @@ def get_config():
         "train_num_samples": 1000,
         "val_num_samples": 200,
 
-        "batch_size": 8,
-        "num_workers": 2,
+        "batch_size": 16,
+        "num_workers": 4,
 
         "train": {
-            "epochs": 40,
+            "epochs": 100,
             "lr": 5e-4,
             "weight_decay": 0.0,
             "save_every_epoch": True,

@@ -8,9 +8,9 @@ import soundfile as sf
 # =========================
 # 路径配置
 # =========================
-INPUT_DIR = Path(r"D:\pyProject\myD_AF\Dataset\06")
-OUTPUT_DIR = Path(r"D:\pyProject\myD_AF\Dataset\clean_speech_test2")
-OUTPUT_NAME = "speaker06_22min.wav"
+INPUT_DIR = Path(r"D:\pyProject\myD_AF\Dataset\04")
+OUTPUT_DIR = Path(r"D:\pyProject\myD_AF\Dataset\clean_speech2")
+OUTPUT_NAME = "speaker04_22min.wav"
 
 
 # =========================
