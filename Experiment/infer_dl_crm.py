@@ -64,7 +64,7 @@ def main():
     cfg = get_config()
     set_seed(cfg["seed"])
 
-    crm_output_dir = os.path.join(cfg["root_dir"], "Results", "results_dl_crm")
+    crm_output_dir = os.path.join(cfg["root_dir"], "Results", "results_dl_crm_wave_l1")
     ckpt_path = os.path.join(crm_output_dir, "checkpoints", "best_model_crm.pt")
 
     device_name = cfg["device"]
@@ -75,7 +75,7 @@ def main():
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-    out_dir = os.path.join(cfg["output_dir"], "inference_crm")
+    out_dir = os.path.join(cfg["output_dir"], "inference_crm_wave_l1")
     ensure_dir(out_dir)
 
     checkpoint = torch.load(ckpt_path, map_location="cpu")
