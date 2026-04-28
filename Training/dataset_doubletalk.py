@@ -39,6 +39,28 @@ class DoubleTalkSTFTDataset(Dataset):
             channel 1 = S_i
 
         dt_mask_frame: [T]
+
+    feature_mode = "hybrid_mag_ri"
+    --------------------------------
+    输出:
+        mag_feat      : [2, T, F]
+            channel 0 = log1p(|D|)
+            channel 1 = log1p(|X|)
+
+        ri_feat       : [4, T, F]
+            channel 0 = D_r
+            channel 1 = D_i
+            channel 2 = X_r
+            channel 3 = X_i
+
+        target_logmag : [T, F]
+            log1p(|S|)
+
+        target_ri     : [2, T, F]
+            channel 0 = S_r
+            channel 1 = S_i
+
+        dt_mask_frame : [T]
     """
 
     def __init__(
@@ -66,7 +88,7 @@ class DoubleTalkSTFTDataset(Dataset):
         # 让 train / val 至少种子区间不同
         self.seed_offset = 0 if split == "train" else 100000
 
-        if self.feature_mode not in ("logmag", "crm_ri"):
+        if self.feature_mode not in ("logmag", "crm_ri", "hybrid_mag_ri"):
             raise ValueError(f"Unsupported feature_mode: {self.feature_mode}")
 
     def __len__(self):
@@ -141,20 +163,35 @@ class DoubleTalkSTFTDataset(Dataset):
         S = stft_complex(s, self.n_fft, self.hop_length, self.win_length, self.window)
 
         if self.feature_mode == "logmag":
-            X_feat = torch.log1p(torch.abs(X)).transpose(0, 1).contiguous()   # [T, F]
-            D_feat = torch.log1p(torch.abs(D)).transpose(0, 1).contiguous()   # [T, F]
-            S_feat = torch.log1p(torch.abs(S)).transpose(0, 1).contiguous()   # [T, F]
+            X_feat = torch.log1p(torch.abs(X)).transpose(0, 1).contiguous()  # [T, F]
+            D_feat = torch.log1p(torch.abs(D)).transpose(0, 1).contiguous()  # [T, F]
+            S_feat = torch.log1p(torch.abs(S)).transpose(0, 1).contiguous()  # [T, F]
 
-            input_feat = torch.stack([D_feat, X_feat], dim=0)                 # [2, T, F]
-            target_feat = S_feat                                              # [T, F]
+            input_feat = torch.stack([D_feat, X_feat], dim=0)  # [2, T, F]
+            target_feat = S_feat  # [T, F]
 
-        else:  # crm_ri
-            X_ri = complex_to_ri_channels(X)   # [2, T, F]
-            D_ri = complex_to_ri_channels(D)   # [2, T, F]
-            S_ri = complex_to_ri_channels(S)   # [2, T, F]
+        elif self.feature_mode == "crm_ri":
+            X_ri = complex_to_ri_channels(X)  # [2, T, F]
+            D_ri = complex_to_ri_channels(D)  # [2, T, F]
+            S_ri = complex_to_ri_channels(S)  # [2, T, F]
 
             input_feat = torch.cat([D_ri, X_ri], dim=0)  # [4, T, F]
-            target_feat = S_ri                           # [2, T, F]
+            target_feat = S_ri  # [2, T, F]
+
+        else:  # hybrid_mag_ri
+            X_logmag = torch.log1p(torch.abs(X)).transpose(0, 1).contiguous()  # [T, F]
+            D_logmag = torch.log1p(torch.abs(D)).transpose(0, 1).contiguous()  # [T, F]
+            S_logmag = torch.log1p(torch.abs(S)).transpose(0, 1).contiguous()  # [T, F]
+
+            X_ri = complex_to_ri_channels(X)  # [2, T, F]
+            D_ri = complex_to_ri_channels(D)  # [2, T, F]
+            S_ri = complex_to_ri_channels(S)  # [2, T, F]
+
+            mag_feat = torch.stack([D_logmag, X_logmag], dim=0)  # [2, T, F]
+            ri_feat = torch.cat([D_ri, X_ri], dim=0)  # [4, T, F]
+
+            input_feat = (mag_feat, ri_feat)
+            target_feat = (S_logmag, S_ri)
 
         # double-talk 时域 mask -> 帧级 soft mask
         masks = sample.get("masks", {})
@@ -162,9 +199,14 @@ class DoubleTalkSTFTDataset(Dataset):
             masks.get("double_talk_mask", torch.zeros(len(d))),
             dtype=torch.float32,
         )
+        if self.feature_mode == "hybrid_mag_ri":
+            num_frames = target_feat[0].shape[-2]  # target_logmag: [T, F]
+        else:
+            num_frames = target_feat.shape[-2]
+
         dt_mask_frame = self._time_mask_to_frame_mask(
             dt_mask_time,
-            num_frames=target_feat.shape[-2],  # [T] 所在维
+            num_frames=num_frames,
         )
 
         extra_meta = sample.get("meta", {}).get("extra", {})
@@ -181,6 +223,7 @@ class DoubleTalkSTFTDataset(Dataset):
         }
 
         return input_feat, target_feat, dt_mask_frame, meta
+        # (mag_feat, ri_feat), (target_logmag, target_ri), dt_mask_frame, meta
 
     def __getitem__(self, idx: int):
         sample = self.build_valid_sample(idx)

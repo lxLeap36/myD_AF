@@ -193,3 +193,54 @@ def apply_complex_mask_ri(mask_ri: torch.Tensor, d_ri: torch.Tensor) -> torch.Te
         out = out[0]
 
     return out
+
+def apply_real_mask_to_ri(mask_mag: torch.Tensor, d_ri: torch.Tensor) -> torch.Tensor:
+    """
+    Apply a real-valued magnitude mask on complex spectrogram represented by RI channels.
+
+    Args:
+        mask_mag:
+            [T, F] or [B, T, F]
+            real-valued mask (usually nonnegative)
+
+        d_ri:
+            [2, T, F] or [B, 2, T, F]
+            channel 0 = D_r
+            channel 1 = D_i
+
+    Returns:
+        base_s_ri:
+            same batch shape as d_ri
+            [2, T, F] or [B, 2, T, F]
+            where:
+                S_base_r = mask_mag * D_r
+                S_base_i = mask_mag * D_i
+    """
+    squeeze_back = False
+
+    if mask_mag.ndim == 2:
+        mask_mag = mask_mag.unsqueeze(0)   # [1, T, F]
+        d_ri = d_ri.unsqueeze(0)           # [1, 2, T, F]
+        squeeze_back = True
+
+    if mask_mag.ndim != 3 or d_ri.ndim != 4:
+        raise ValueError("mask_mag must be [T,F] or [B,T,F], and d_ri must be [2,T,F] or [B,2,T,F].")
+
+    if d_ri.shape[1] != 2:
+        raise ValueError("d_ri must have shape [B, 2, T, F].")
+
+    if mask_mag.shape[0] != d_ri.shape[0] or mask_mag.shape[1] != d_ri.shape[2] or mask_mag.shape[2] != d_ri.shape[3]:
+        raise ValueError(f"Shape mismatch: mask_mag {mask_mag.shape} vs d_ri {d_ri.shape}")
+
+    dr = d_ri[:, 0]   # [B, T, F]
+    di = d_ri[:, 1]   # [B, T, F]
+
+    sr = mask_mag * dr
+    si = mask_mag * di
+
+    out = torch.stack([sr, si], dim=1)   # [B, 2, T, F]
+
+    if squeeze_back:
+        out = out[0]
+
+    return out

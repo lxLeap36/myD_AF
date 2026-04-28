@@ -73,8 +73,8 @@ class DTMaskedWeightedSpectralL1Loss(nn.Module):
         dt_mask: torch.Tensor,
     ) -> torch.Tensor:
         """
-        pred   : [B, T, F]
-        target : [B, T, F]
+        pred   : [B, T, F]，是log1p(|S_hat|)
+        target : [B, T, F]，是log1p(|S|)
         dt_mask: [B, T]
         """
         # 每个样本内部按 target 最大值做归一化
