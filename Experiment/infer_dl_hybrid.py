@@ -245,6 +245,95 @@ def main():
     target_logmag_plot = torch.log1p(torch.abs(target_spec)).transpose(0, 1).contiguous()
     d_logmag = torch.log1p(torch.abs(d_spec)).transpose(0, 1).contiguous()
 
+    # =========================
+    # 新增：Hybrid 诊断图
+    # 看 3 件事：
+    # 1) base 分支本身是否带低频噪声
+    # 2) final 相比 base 修掉了多少
+    # 3) delta 分支是在净化，还是又加回一些东西
+    # =========================
+
+    base_err_logmag = torch.abs(base_logmag - target_logmag_plot)   # [T, F]
+    final_err_logmag = torch.abs(pred_logmag - target_logmag_plot)  # [T, F]
+    base_to_final_logmag = torch.abs(pred_logmag - base_logmag)     # [T, F]
+
+    # 图 1：总诊断图（最重要）
+    fig = plt.figure(figsize=(16, 8.8))
+
+    ax1 = fig.add_subplot(2, 3, 1)
+    im1 = ax1.imshow(base_logmag.numpy().T, aspect="auto", origin="lower")
+    ax1.set_title("Base branch: log1p(|S_base|)")
+    ax1.set_xlabel("Time frame")
+    ax1.set_ylabel("Freq bin")
+    fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+
+    ax2 = fig.add_subplot(2, 3, 2)
+    im2 = ax2.imshow(delta_logmag.numpy().T, aspect="auto", origin="lower")
+    ax2.set_title("Residual branch: log1p(|Delta S|)")
+    ax2.set_xlabel("Time frame")
+    ax2.set_ylabel("Freq bin")
+    fig.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+
+    ax3 = fig.add_subplot(2, 3, 3)
+    im3 = ax3.imshow(pred_logmag.numpy().T, aspect="auto", origin="lower")
+    ax3.set_title("Final output: log1p(|S_hat|)")
+    ax3.set_xlabel("Time frame")
+    ax3.set_ylabel("Freq bin")
+    fig.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+
+    ax4 = fig.add_subplot(2, 3, 4)
+    im4 = ax4.imshow(target_logmag_plot.numpy().T, aspect="auto", origin="lower")
+    ax4.set_title("Target: log1p(|S|)")
+    ax4.set_xlabel("Time frame")
+    ax4.set_ylabel("Freq bin")
+    fig.colorbar(im4, ax=ax4, fraction=0.046, pad=0.04)
+
+    ax5 = fig.add_subplot(2, 3, 5)
+    im5 = ax5.imshow(base_err_logmag.numpy().T, aspect="auto", origin="lower")
+    ax5.set_title("|Base - Target| (logmag)")
+    ax5.set_xlabel("Time frame")
+    ax5.set_ylabel("Freq bin")
+    fig.colorbar(im5, ax=ax5, fraction=0.046, pad=0.04)
+
+    ax6 = fig.add_subplot(2, 3, 6)
+    im6 = ax6.imshow(final_err_logmag.numpy().T, aspect="auto", origin="lower")
+    ax6.set_title("|Final - Target| (logmag)")
+    ax6.set_xlabel("Time frame")
+    ax6.set_ylabel("Freq bin")
+    fig.colorbar(im6, ax=ax6, fraction=0.046, pad=0.04)
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "diagnostic_base_delta_final.png"), dpi=150)
+    plt.close(fig)
+
+    # 图 2：专门看 final 相比 base 改了哪里
+    fig = plt.figure(figsize=(15.5, 4.8))
+
+    ax1 = fig.add_subplot(1, 3, 1)
+    im1 = ax1.imshow(base_to_final_logmag.numpy().T, aspect="auto", origin="lower")
+    ax1.set_title("|Final - Base| (logmag)")
+    ax1.set_xlabel("Time frame")
+    ax1.set_ylabel("Freq bin")
+    fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+
+    ax2 = fig.add_subplot(1, 3, 2)
+    im2 = ax2.imshow(delta_logmag.numpy().T, aspect="auto", origin="lower")
+    ax2.set_title("log1p(|Delta S|)")
+    ax2.set_xlabel("Time frame")
+    ax2.set_ylabel("Freq bin")
+    fig.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+
+    ax3 = fig.add_subplot(1, 3, 3)
+    im3 = ax3.imshow(d_logmag.numpy().T, aspect="auto", origin="lower")
+    ax3.set_title("log1p(|D|)")
+    ax3.set_xlabel("Time frame")
+    ax3.set_ylabel("Freq bin")
+    fig.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "diagnostic_delta_effect.png"), dpi=150)
+    plt.close(fig)
+
     np.savez(
         os.path.join(out_dir, "inference_arrays.npz"),
         x=x_np,
