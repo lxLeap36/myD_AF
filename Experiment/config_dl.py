@@ -11,7 +11,7 @@ def get_config():
         "seed": 42,
         "device": "cuda",   # 若无 CUDA，可改成 "cpu"
         "root_dir": root_dir,
-        "output_dir": os.path.join(root_dir, "Results", "results_dl_crm_wave_l1"),
+        "output_dir": os.path.join(root_dir, "Results", "results_dl_hybrid"),
         # "output_dir": os.path.join(root_dir, "Results", "results_dl_mask_test2"),  # 测试用，实际训练时改回上面这一行
 
         # -----------------------------
@@ -29,7 +29,7 @@ def get_config():
         # "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech1"),
         # "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech2"),
         # "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom"),
-        # 测试数据路径，实际训练时可改成上面两行
+        # 测试数据路径，不同源，实际训练时可改成上面两行
         "far_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test1"),
         "near_speech_dir": os.path.join(root_dir, "Dataset", "clean_speech_test2"),
         "rir_dir": os.path.join(root_dir, "Dataset", "simulated_rirs", "smallroom", "Room200"),

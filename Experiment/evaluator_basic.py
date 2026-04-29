@@ -424,11 +424,29 @@ def save_results(results, sample, cfg, out_dir: Path):
 
         for alg_name, res in results.items():
             prefix = alg_name.lower()
+
             save_dict[f"{prefix}_error"] = res["error_signal"]
             save_dict[f"{prefix}_residual_for_erle"] = res["residual_for_erle"]
             save_dict[f"{prefix}_erle_curve"] = res["erle_curve"]
             save_dict[f"{prefix}_convergence_curve_db"] = res["convergence_curve_db"]
-            save_dict[f"{prefix}_estimated_weights"] = res["estimated_weights"]
+
+            # 新增：统一保存 AEC 输出
+            if res.get("aec_output", None) is not None:
+                save_dict[f"{prefix}_aec_output"] = np.asarray(
+                    res["aec_output"], dtype=np.float32
+                )
+
+            # 新增：统一保存派生回声估计 y_hat = d - e
+            if res.get("estimated_echo", None) is not None:
+                save_dict[f"{prefix}_estimated_echo"] = np.asarray(
+                    res["estimated_echo"], dtype=np.float32
+                )
+
+            # 传统 LMS/NLMS/RLS 有 estimated_weights，DLHybrid 没有
+            if res.get("estimated_weights", None) is not None:
+                save_dict[f"{prefix}_estimated_weights"] = np.asarray(
+                    res["estimated_weights"], dtype=np.float32
+                )
             # 如果存在 weight_history（可能很大），我们也保存下来以便后续分析或绘图恢复
             if res.get("weight_history", None) is not None:
                 # 转成 float32 array 保存，shape = (n_samples, filter_length)

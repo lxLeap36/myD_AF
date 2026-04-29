@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import os
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
@@ -20,8 +20,8 @@ CONFIG = {
     "duration_sec": 15.0,
 
     # ===== 数据路径 =====
-    "far_speech_dir": ROOT_DIR / "Dataset" / "clean_speech1",
-    "near_speech_dir": ROOT_DIR / "Dataset" / "clean_speech2",
+    "far_speech_dir": ROOT_DIR / "Dataset" / "clean_speech_test1",
+    "near_speech_dir": ROOT_DIR / "Dataset" / "clean_speech_test2",
     "babble_noise_dir": ROOT_DIR / "Dataset" / "Noise" / "babble_noise",
     "rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "smallroom" / "Room200",
     #"rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "easy_8rir",
@@ -58,7 +58,7 @@ CONFIG = {
 
     # ===== 算法列表 =====
     #"algorithms": ["lms", "nlms", "rls"],
-    "algorithms": ["lms", "nlms"],
+    "algorithms": ["lms", "nlms", "rls", "dl_hybrid"],
 
     # ===== 算法参数 =====
     "alg_params": {
@@ -75,6 +75,31 @@ CONFIG = {
             "filter_length": 1024,
             "lambda_": 0.98,
             "delta": 0.1,
+        },
+
+        # ===== V2-4A: deep hybrid model as one platform algorithm =====
+        "dl_hybrid": {
+            # 按你的训练脚本默认位置：
+            # Results/results_dl_hybrid/checkpoints/best_model_hybrid.pt
+            "checkpoint_path": str(
+                ROOT_DIR / "Results" / "results_dl_hybrid" / "checkpoints" / "best_model_hybrid.pt"
+            ),
+
+            # 没有 GPU 就改成 "cpu"
+            "device": "cuda",
+
+            # 必须和训练时保持一致
+            "stft": {
+                "n_fft": 512,
+                "hop_length": 128,
+                "win_length": 512,
+            },
+
+            # None 表示读取 checkpoint 里的 beta_residual
+            # 也可以手动覆盖，比如 0.40
+            "beta_residual": None,
+
+            "strict": True,
         },
     },
 }

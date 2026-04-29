@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 import sys
 import numpy as np
+import os
 
 # 保证能从项目根目录导入模块
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -67,6 +68,7 @@ def main():
         e = run_algorithm_on_sample(algo, sample)
 
         # 评估该样本（ERLE / 收敛曲线 / PESQ / SI-SDR 等）
+        # 评估该样本（ERLE / 收敛曲线 / PESQ / SI-SDR 等）
         res = evaluate_sample(
             sample=sample,
             e=e,
@@ -75,17 +77,34 @@ def main():
             cfg=CONFIG,
         )
 
-        # 直接复用算法类里已有的 weights / weight_history
-        # 注意：这里我们把最终 weights 复制一份到结果 dict 中，便于保存与比较
-        res["estimated_weights"] = np.asarray(algo.weights, dtype=np.float32).copy()
+        # ===== 统一保存 AEC 输出和派生回声估计 =====
+        # 对传统算法：
+        #   e = d - y_hat
+        #   所以 y_hat = d - e
+        #
+        # 对 DLHybrid：
+        #   e = s_hat
+        #   所以 y_hat = d - s_hat
+        #
+        # 两者形式上都可以写成：
+        #   y_hat = d - e
+        d = np.asarray(sample["d"], dtype=np.float32)
+        e_np = np.asarray(e, dtype=np.float32)
 
-        # 算法如果有 weight_history 属性，则保存下来（可能为空列表）
-        if hasattr(algo, "weight_history"):
-            # 统一成 numpy array 或者保留为 None
-            if len(algo.weight_history) > 0:
-                res["weight_history"] = np.asarray(algo.weight_history, dtype=np.float32)
-            else:
-                res["weight_history"] = None
+        res["aec_output"] = e_np.copy()
+        res["estimated_echo"] = (d - e_np).astype(np.float32)
+
+        # ===== 保存路径估计：传统算法有，DL 没有 =====
+        weights = getattr(algo, "weights", None)
+        if weights is not None:
+            res["estimated_weights"] = np.asarray(weights, dtype=np.float32).copy()
+        else:
+            res["estimated_weights"] = None
+
+        # ===== 保存权值历史：传统算法可能有，DL 没有 =====
+        weight_history = getattr(algo, "weight_history", None)
+        if weight_history is not None and len(weight_history) > 0:
+            res["weight_history"] = np.asarray(weight_history, dtype=np.float32)
         else:
             res["weight_history"] = None
 

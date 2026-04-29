@@ -8,6 +8,7 @@ from scipy.signal import resample_poly
 from Algorithms.LMS import LMSFilter
 from Algorithms.NLMS import NLMSFilter
 from Algorithms.RLS import RLSFilter
+from Algorithms.DLHybridAEC import DLHybridAEC
 
 from Scenarios.farend_single_talk import generate_farend_single_talk
 from Scenarios.noisy_single_talk import generate_noisy_single_talk
@@ -139,6 +140,15 @@ def build_algorithm(name: str, cfg):
             filter_length=params["filter_length"],
             lambda_=params["lambda_"],
             delta=params["delta"],
+        )
+
+    if name == "dl_hybrid":
+        return DLHybridAEC(
+            checkpoint_path=params["checkpoint_path"],
+            device=params.get("device", cfg.get("device", "cuda")),
+            stft_cfg=params.get("stft", None),
+            beta_residual=params.get("beta_residual", None),
+            strict=params.get("strict", True),
         )
 
     raise ValueError(f"Unsupported algorithm name: {name}")
