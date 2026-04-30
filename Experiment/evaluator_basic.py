@@ -1,8 +1,11 @@
 import json
+import csv
 from pathlib import Path
+
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")   # AutoDL / 服务器 / headless 环境必须用 Agg
 import matplotlib.pyplot as plt
+
 import numpy as np
 
 from Metrics.erle_metric import compute_erle, compute_erle_curve
@@ -32,6 +35,51 @@ def to_numpy_1d(x):
         raise ValueError("Expected a 1-D signal after squeeze().")
     return x.astype(np.float32)
 
+def _is_valid_audio_for_objective_metric(x, *, min_rms=1e-6, max_abs=50.0):
+    """
+    判断一条音频是否适合送进 PESQ / SI-SDR 这类客观指标。
+
+    返回:
+        ok: bool
+        reason: str
+    """
+    x = np.asarray(x, dtype=np.float32).squeeze()
+
+    if x.ndim != 1:
+        return False, f"not_1d_shape_{x.shape}"
+
+    if x.size == 0:
+        return False, "empty"
+
+    if not np.all(np.isfinite(x)):
+        return False, "has_nan_or_inf"
+
+    rms = float(np.sqrt(np.mean(x ** 2) + 1e-12))
+    peak = float(np.max(np.abs(x)))
+
+    if rms < min_rms:
+        return False, f"too_silent_rms_{rms:.3e}"
+
+    if peak > max_abs:
+        return False, f"too_large_peak_{peak:.3e}"
+
+    return True, "ok"
+
+
+def _safe_for_metric(x, *, peak=0.99):
+    """
+    仅用于 PESQ / SI-SDR 前的保护：
+    - nan/inf -> 0
+    - 如果峰值超过 peak，则整体缩放到 peak
+    """
+    x = np.asarray(x, dtype=np.float32).squeeze()
+    x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+    max_abs = float(np.max(np.abs(x))) if x.size > 0 else 0.0
+    if max_abs > peak:
+        x = x / (max_abs + 1e-12) * peak
+
+    return x.astype(np.float32)
 
 def evaluate_sample(sample, e, scenario_name, fs, cfg):
     """
@@ -80,19 +128,32 @@ def evaluate_sample(sample, e, scenario_name, fs, cfg):
 
     # 第一版只在 double-talk 下把 e 当近端恢复输出
     if scenario_name == "double_talk":
-        # try:
-        #     pesq_value = tensor_to_float(compute_pesq(clean=s, enhanced=e, fs=fs))
-        # except Exception:
-        #     pesq_value = None
-        try:
-            pesq_value = tensor_to_float(compute_pesq(clean=s, enhanced=e, fs=fs))
-        except Exception as ex:
-            print(f"[PESQ ERROR] {type(ex).__name__}: {ex}")
-            pesq_value = None
+        # PESQ / SI-SDR 只在输出是有效语音时计算。
+        # 如果某个算法发散、静音、nan/inf，直接跳过，避免整轮实验被一个异常输出打断。
+        metric_e = _safe_for_metric(e)
+        metric_s = _safe_for_metric(s)
 
-        try:
-            si_sdr_value = tensor_to_float(compute_si_sdr(clean=s, enhanced=e))
-        except Exception:
+        ok_s, reason_s = _is_valid_audio_for_objective_metric(metric_s)
+        ok_e, reason_e = _is_valid_audio_for_objective_metric(metric_e)
+
+        if ok_s and ok_e:
+            try:
+                pesq_value = tensor_to_float(compute_pesq(clean=metric_s, enhanced=metric_e, fs=fs))
+            except Exception as ex:
+                print(f"[PESQ ERROR] {type(ex).__name__}: {ex}")
+                pesq_value = None
+
+            try:
+                si_sdr_value = tensor_to_float(compute_si_sdr(clean=metric_s, enhanced=metric_e))
+            except Exception as ex:
+                print(f"[SI-SDR ERROR] {type(ex).__name__}: {ex}")
+                si_sdr_value = None
+        else:
+            print(
+                f"[METRIC SKIP] PESQ/SI-SDR skipped. "
+                f"clean_valid={ok_s}({reason_s}), enhanced_valid={ok_e}({reason_e})"
+            )
+            pesq_value = None
             si_sdr_value = None
 
     result = {
@@ -146,6 +207,7 @@ def _slice_signal_for_plot(x, fs, max_sec=None):
 
     n = min(len(x), int(round(max_sec * fs)))
     return x[:n]
+
 def print_summary(results, sample, cfg):
     """
     打印实验结果概览
@@ -158,10 +220,41 @@ def print_summary(results, sample, cfg):
     for alg_name, res in results.items():
         print(f"[{alg_name}]")
         print(f"  ERLE   : {res['erle']:.4f} dB")
+
         if res["pesq"] is not None:
             print(f"  PESQ   : {res['pesq']:.4f}")
+
         if res["si_sdr"] is not None:
             print(f"  SI-SDR : {res['si_sdr']:.4f} dB")
+
+        comp = res.get("complexity", None)
+        if comp is not None:
+            param_count = comp.get("param_count", None)
+            trainable_param_count = comp.get("trainable_param_count", None)
+            state_count = comp.get("state_count", None)
+
+            if param_count is not None:
+                print(f"  Params : {param_count}")
+
+            if trainable_param_count is not None and trainable_param_count != param_count:
+                print(f"  Trainable params : {trainable_param_count}")
+
+            if state_count is not None:
+                print(f"  Runtime states   : {state_count}")
+
+            if comp.get("time_median_ms", None) is not None:
+                print(
+                    f"  Time   : median={comp['time_median_ms']:.3f} ms, "
+                    f"mean={comp['time_mean_ms']:.3f} ms, "
+                    f"RTF={comp['rtf_median']:.4f}"
+                )
+
+            if comp.get("cuda_peak_memory_mb", None) is not None:
+                print(
+                    f"  CUDA peak memory : {comp['cuda_peak_memory_mb']:.2f} MB "
+                    f"(extra {comp['cuda_extra_peak_memory_mb']:.2f} MB)"
+                )
+
         print("-" * 40)
 
 
@@ -193,7 +286,7 @@ def plot_curves(results, cfg, out_dir: Path):
 
     if cfg["save_fig"]:
         plt.savefig(out_dir / "convergence_curve.png", dpi=200)
-    plt.show()
+    plt.close()
 
     # ===== 图2：ERLE 曲线 =====
     plt.figure(figsize=(10, 4.5))
@@ -216,7 +309,7 @@ def plot_curves(results, cfg, out_dir: Path):
 
     if cfg["save_fig"]:
         plt.savefig(out_dir / "erle_curve.png", dpi=200)
-    plt.show()
+    plt.close()
 
 def plot_signal_comparison(results, sample, cfg, out_dir: Path):
     """
@@ -385,6 +478,143 @@ def plot_path_comparison(results, sample, cfg, out_dir: Path):
 
         plt.close(fig)
 
+def _format_table_value(value, digits=4):
+    """
+    把 None / 数值 / 字符串统一转成表格里的字符串。
+    """
+    if value is None:
+        return "-"
+
+    try:
+        if isinstance(value, (float, np.floating)):
+            return f"{float(value):.{digits}f}"
+        if isinstance(value, (int, np.integer)):
+            return str(int(value))
+    except Exception:
+        pass
+
+    return str(value)
+
+
+def _format_count(value):
+    """
+    参数量 / 状态量用千分位显示。
+    """
+    if value is None:
+        return "-"
+    try:
+        return f"{int(value):,}"
+    except Exception:
+        return str(value)
+
+
+def build_comparison_table_rows(results):
+    """
+    把 results 整理成表格行。
+
+    每一行对应一个算法：
+        Method, ERLE, PESQ, SI-SDR, Params, States, Time, RTF, Memory, Device
+    """
+    rows = []
+
+    for alg_name, res in results.items():
+        comp = res.get("complexity", {}) or {}
+
+        row = {
+            "Method": alg_name,
+            "ERLE(dB)": _format_table_value(res.get("erle", None), digits=4),
+            "PESQ": _format_table_value(res.get("pesq", None), digits=4),
+            "SI-SDR(dB)": _format_table_value(res.get("si_sdr", None), digits=4),
+
+            "Params": _format_count(comp.get("param_count", None)),
+            "States": _format_count(comp.get("state_count", None)),
+
+            "Median Time(ms)": _format_table_value(comp.get("time_median_ms", None), digits=3),
+            "Mean Time(ms)": _format_table_value(comp.get("time_mean_ms", None), digits=3),
+            "RTF": _format_table_value(comp.get("rtf_median", None), digits=5),
+
+            "CUDA Extra Mem(MB)": _format_table_value(
+                comp.get("cuda_extra_peak_memory_mb", None),
+                digits=2,
+            ),
+            "CUDA Peak Mem(MB)": _format_table_value(
+                comp.get("cuda_peak_memory_mb", None),
+                digits=2,
+            ),
+            "Device": _format_table_value(comp.get("device", None), digits=4),
+        }
+
+        rows.append(row)
+
+    return rows
+
+
+def make_markdown_table(rows):
+    """
+    生成 Markdown 表格字符串。
+    """
+    if len(rows) == 0:
+        return ""
+
+    headers = list(rows[0].keys())
+
+    lines = []
+    lines.append("| " + " | ".join(headers) + " |")
+    lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+
+    for row in rows:
+        lines.append("| " + " | ".join(str(row[h]) for h in headers) + " |")
+
+    return "\n".join(lines)
+
+
+def print_comparison_table(results):
+    """
+    在终端打印统一对比表。
+    """
+    rows = build_comparison_table_rows(results)
+    table = make_markdown_table(rows)
+
+    print("\n" + "=" * 60)
+    print("Comparison Table")
+    print("=" * 60)
+
+    if table:
+        print(table)
+    else:
+        print("No rows to display.")
+
+    print("=" * 60 + "\n")
+
+
+def save_comparison_table(results, out_dir: Path):
+    """
+    保存：
+        comparison_table.md
+        comparison_table.csv
+    """
+    rows = build_comparison_table_rows(results)
+
+    if len(rows) == 0:
+        return
+
+    # ===== 保存 Markdown =====
+    md_table = make_markdown_table(rows)
+    md_path = out_dir / "comparison_table.md"
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(md_table)
+        f.write("\n")
+
+    # ===== 保存 CSV =====
+    csv_path = out_dir / "comparison_table.csv"
+    headers = list(rows[0].keys())
+
+    with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
 def save_results(results, sample, cfg, out_dir: Path):
     """
     保存：
@@ -408,6 +638,7 @@ def save_results(results, sample, cfg, out_dir: Path):
                 "erle": res["erle"],
                 "pesq": res["pesq"],
                 "si_sdr": res["si_sdr"],
+                "complexity": res.get("complexity", None),
             }
 
         with open(out_dir / "summary.json", "w", encoding="utf-8") as f:

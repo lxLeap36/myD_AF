@@ -13,9 +13,16 @@ from Tools.set_seed import set_seed
 
 from config_basic import CONFIG
 from utils_basic import build_algorithm, build_scenario, run_algorithm_on_sample
+from complexity_basic import (
+    profile_algorithm_on_sample,
+    get_static_complexity_info,
+    disable_algorithm_history,
+)
 from evaluator_basic import (
     evaluate_sample,
     print_summary,
+    print_comparison_table,
+    save_comparison_table,
     plot_curves,
     plot_signal_comparison,
     plot_path_comparison,
@@ -65,7 +72,19 @@ def main():
         # 构造算法实例（LMS/NLMS/RLS）
         algo = build_algorithm(name, CONFIG)
         # 运行算法得到误差信号 e(n)
-        e = run_algorithm_on_sample(algo, sample)
+        # 如果开启 complexity，则使用 profile_algorithm_on_sample：
+        #   - 先 warmup
+        #   - 再正式计时
+        #   - 返回最后一次 timed run 的 e
+        if CONFIG.get("complexity", {}).get("enable", False):
+            e, complexity_info = profile_algorithm_on_sample(algo, sample, CONFIG)
+        else:
+            algo.reset()
+            if not CONFIG.get("record_weight_history", False):
+                disable_algorithm_history(algo)
+
+            e = algo.process(sample["x"], sample["d"])
+            complexity_info = get_static_complexity_info(algo)
 
         # 评估该样本（ERLE / 收敛曲线 / PESQ / SI-SDR 等）
         # 评估该样本（ERLE / 收敛曲线 / PESQ / SI-SDR 等）
@@ -93,6 +112,8 @@ def main():
 
         res["aec_output"] = e_np.copy()
         res["estimated_echo"] = (d - e_np).astype(np.float32)
+        # ===== 保存复杂度信息 =====
+        res["complexity"] = complexity_info
 
         # ===== 保存路径估计：传统算法有，DL 没有 =====
         weights = getattr(algo, "weights", None)
@@ -102,9 +123,13 @@ def main():
             res["estimated_weights"] = None
 
         # ===== 保存权值历史：传统算法可能有，DL 没有 =====
-        weight_history = getattr(algo, "weight_history", None)
-        if weight_history is not None and len(weight_history) > 0:
-            res["weight_history"] = np.asarray(weight_history, dtype=np.float32)
+        # ===== 保存权值历史：默认关闭，避免 OOM =====
+        if CONFIG.get("record_weight_history", False):
+            weight_history = getattr(algo, "weight_history", None)
+            if weight_history is not None and len(weight_history) > 0:
+                res["weight_history"] = np.asarray(weight_history, dtype=np.float32)
+            else:
+                res["weight_history"] = None
         else:
             res["weight_history"] = None
 
@@ -114,10 +139,12 @@ def main():
     # 5. 打印结果
     print(f"开始打印结果...")
     print_summary(results, sample, CONFIG)
+    print_comparison_table(results)
 
     # 6. 保存结果
     print(f"开始保存结果...")
     save_results(results, sample, CONFIG, out_dir)
+    save_comparison_table(results, out_dir)
 
     # 7. 画图
     print(f"开始绘图...")

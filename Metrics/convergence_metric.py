@@ -10,7 +10,6 @@ def _to_1d_float32(x):
         raise ValueError("Input must be 1-D after squeeze().")
     return x
 
-
 def compute_error_curve(error):
     """
     返回瞬时误差曲线 e(n)
@@ -27,12 +26,36 @@ def compute_squared_error_curve(error):
     """
     返回平方误差曲线 e^2(n)
 
-    说明：
-    - 这是最基础的学习曲线原始量
-    - 但逐点平方误差仍然可能比较抖，所以一般还会再做平滑
+    稳定版：
+    - 先用 float64 计算平方，避免 float32 直接溢出
+    - 对 nan / inf 做保护
+    - 最后裁剪到 float32 可表示范围内
     """
-    error = _to_1d_float32(error)
-    return (error ** 2).astype(np.float32)
+    error = np.asarray(error, dtype=np.float64).squeeze()
+    if error.ndim != 1:
+        raise ValueError("Input must be 1-D after squeeze().")
+
+    # 把 nan / inf 先替换掉，避免后面整条曲线污染
+    # 这里不用 0 替代 inf，而是用较大的有限值，表示“该算法已经非常差”
+    error = np.nan_to_num(
+        error,
+        nan=0.0,
+        posinf=1e20,
+        neginf=-1e20,
+    )
+
+    se = error * error
+
+    # float32 最大约 3.4e38，这里留一点余量
+    se = np.nan_to_num(
+        se,
+        nan=0.0,
+        posinf=1e30,
+        neginf=1e30,
+    )
+    se = np.clip(se, 0.0, 1e30)
+
+    return se.astype(np.float32)
 
 
 def moving_average(x, window_size=512):

@@ -5,6 +5,11 @@ import numpy as np
 import soundfile as sf
 from scipy.signal import resample_poly
 
+from Algorithms.TorchAdaptiveFilters import (
+    TorchLMSFilter,
+    TorchNLMSFilter,
+    TorchRLSFilter,
+)
 from Algorithms.LMS import LMSFilter
 from Algorithms.NLMS import NLMSFilter
 from Algorithms.RLS import RLSFilter
@@ -140,6 +145,29 @@ def build_algorithm(name: str, cfg):
             filter_length=params["filter_length"],
             lambda_=params["lambda_"],
             delta=params["delta"],
+        )
+
+    if name == "torch_lms":
+        return TorchLMSFilter(
+            filter_length=params["filter_length"],
+            step_size=params["step_size"],
+            device=params.get("device", cfg.get("device", "cuda")),
+        )
+
+    if name == "torch_nlms":
+        return TorchNLMSFilter(
+            filter_length=params["filter_length"],
+            step_size=params["step_size"],
+            epsilon=params["epsilon"],
+            device=params.get("device", cfg.get("device", "cuda")),
+        )
+
+    if name == "torch_rls":
+        return TorchRLSFilter(
+            filter_length=params["filter_length"],
+            lambda_=params["lambda_"],
+            delta=params["delta"],
+            device=params.get("device", cfg.get("device", "cuda")),
         )
 
     if name == "dl_hybrid":
