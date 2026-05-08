@@ -22,6 +22,7 @@ from Scenarios.noisy_single_talk import generate_noisy_single_talk
 from Scenarios.double_talk import generate_double_talk
 from Scenarios.path_change import generate_path_change
 from Scenarios.common import sample_random_double_talk_segments
+from Scenarios.nonlinear_farend_single_talk import generate_nonlinear_farend_single_talk
 
 from Tools.data_loader import (
     sample_far_end,
@@ -392,6 +393,10 @@ def build_scenario(cfg):
             peak=0.95,
         )
         sample["meta"]["extra"] = extra_meta
+        return sample
+
+    if scenario_name == "nonlinear_farend_single_talk":
+        sample = generate_nonlinear_farend_single_talk(far_end, rir, fs=fs, normalize=True)
         return sample
 
     raise ValueError(f"Unsupported scenario_name: {scenario_name}")

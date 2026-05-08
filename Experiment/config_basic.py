@@ -14,7 +14,7 @@ CONFIG = {
     # "noisy_single_talk"
     # "double_talk"
     # "path_change"
-    "scenario_name": "farend_single_talk",
+    "scenario_name": "nonlinear_farend_single_talk",
 
     # ===== 单条实验语音时长 =====
     "duration_sec": 3.0,
@@ -36,6 +36,11 @@ CONFIG = {
     "ser_db": 0.0,              # double_talk 用
     "change_time_sec": 7.5,     # path_change 用
     "noise_type": "babble",      # "white" / "impulse" / "babble"
+    # ===== 非线性失真参数 =====
+    "nonlinear_params": {
+        "delta_1": 4,  # 失真程度 (1~4，4最严重)
+        "delta_2": 4,
+    },
 
     # ===== 语音预处理参数 =====
     # 这部分和 config_dl.py 中的 speech_preprocess 对齐，
@@ -123,7 +128,7 @@ CONFIG = {
     "alg_params": {
         "lms": {
             "filter_length": 512,
-            "step_size": 0.5,
+            "step_size": 0.1,
         },
         "nlms": {
             "filter_length": 1024,
@@ -139,7 +144,7 @@ CONFIG = {
         "klms": {
             "filter_length": 512,    # 时间延迟嵌入长度
             "step_size": 0.5,        # 学习率 (eta)
-            "kernel_param": 0.1,     # 高斯核带宽参数 (gamma/a)
+            "kernel_param": 0.142623,     # 高斯核带宽参数 (gamma/a)
             "budget": 1000,          # 字典大小上限，防止长时间序列导致 OOM
         },
         # ===== PyTorch adaptive filters =====
