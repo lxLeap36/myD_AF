@@ -13,7 +13,9 @@ from Algorithms.TorchAdaptiveFilters import (
 from Algorithms.LMS import LMSFilter
 from Algorithms.NLMS import NLMSFilter
 from Algorithms.RLS import RLSFilter
+from Algorithms.KLMS import KLMSFilter
 from Algorithms.DLHybridAEC import DLHybridAEC
+
 
 from Scenarios.farend_single_talk import generate_farend_single_talk
 from Scenarios.noisy_single_talk import generate_noisy_single_talk
@@ -145,6 +147,15 @@ def build_algorithm(name: str, cfg):
             filter_length=params["filter_length"],
             lambda_=params["lambda_"],
             delta=params["delta"],
+        )
+
+        # ====== 新增 KLMS 分支 ======
+    if name == "klms":
+        return KLMSFilter(
+            filter_length=params["filter_length"],
+            step_size=params["step_size"],
+            kernel_param=params["kernel_param"],
+            budget=params.get("budget", 1000)
         )
 
     if name == "torch_lms":

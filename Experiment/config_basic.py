@@ -14,7 +14,7 @@ CONFIG = {
     # "noisy_single_talk"
     # "double_talk"
     # "path_change"
-    "scenario_name": "double_talk",
+    "scenario_name": "farend_single_talk",
 
     # ===== 单条实验语音时长 =====
     "duration_sec": 3.0,
@@ -99,11 +99,11 @@ CONFIG = {
 
         # 预热次数：不计入最终时间。
         # 作用：避开第一次 CUDA context 初始化、cuDNN 选择、内存池启动等冷启动开销。
-        "warmup_runs": 1,
+        "warmup_runs": 2,
 
         # 正式计时次数：最终报告 mean / median / std。
         # 如果 RLS 很慢，可以先改成 3。
-        "timed_runs": 1,
+        "timed_runs": 5,
 
         # 是否测 CUDA 显存。只有算法实际在 cuda 上运行时才有效。
         "measure_cuda_memory": True,
@@ -117,13 +117,13 @@ CONFIG = {
 
     # ===== 算法列表 =====
     #"algorithms": ["lms", "nlms", "rls"],
-    "algorithms": ["lms", "nlms", "torch_lms", "torch_nlms", "dl_hybrid"],
+    "algorithms": ["lms", "nlms", "klms", "dl_hybrid"],
 
     # ===== 算法参数 =====
     "alg_params": {
         "lms": {
             "filter_length": 512,
-            "step_size": 0.05,
+            "step_size": 0.5,
         },
         "nlms": {
             "filter_length": 1024,
@@ -134,6 +134,13 @@ CONFIG = {
             "filter_length": 1024,
             "lambda_": 0.98,
             "delta": 0.1,
+        },
+        # ================= 新增 KLMS 参数 =================
+        "klms": {
+            "filter_length": 512,    # 时间延迟嵌入长度
+            "step_size": 0.5,        # 学习率 (eta)
+            "kernel_param": 0.1,     # 高斯核带宽参数 (gamma/a)
+            "budget": 1000,          # 字典大小上限，防止长时间序列导致 OOM
         },
         # ===== PyTorch adaptive filters =====
         "torch_lms": {

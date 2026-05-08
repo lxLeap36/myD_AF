@@ -35,6 +35,72 @@ def to_numpy_1d(x):
         raise ValueError("Expected a 1-D signal after squeeze().")
     return x.astype(np.float32)
 
+def compute_residual_basic_metrics(residual, eps=1e-12, clip_abs=1e10):
+    """
+    远端单讲 / 残余回声场景下的基础指标。
+
+    稳定版：
+    - 用 float64 计算平方，避免 float32 直接 overflow
+    - nan / inf 会先替换成有限值
+    - 极端大值会裁剪，避免一个发散算法把整轮评估弄崩
+
+    residual_rms:
+        残余信号 RMS，越小越好。
+
+    residual_mse:
+        残余信号均方能量，越小越好。
+
+    residual_dbfs:
+        以 full-scale=1 为参考的 RMS dBFS。
+    """
+    residual_raw = np.asarray(residual).squeeze()
+
+    if residual_raw.ndim != 1:
+        raise ValueError(f"Expected 1-D residual, got shape {residual_raw.shape}")
+
+    # 记录原始输出是否已经异常，方便后续判断是不是算法发散
+    finite_mask = np.isfinite(residual_raw)
+    finite_ratio = float(np.mean(finite_mask)) if residual_raw.size > 0 else 0.0
+
+    if np.any(finite_mask):
+        max_abs_raw = float(np.max(np.abs(residual_raw[finite_mask])))
+    else:
+        max_abs_raw = float("inf")
+
+    # 用 float64 做后续计算，避免 float32 平方溢出
+    residual64 = np.asarray(residual_raw, dtype=np.float64)
+
+    # nan / inf 先替换成有限值
+    residual64 = np.nan_to_num(
+        residual64,
+        nan=0.0,
+        posinf=clip_abs,
+        neginf=-clip_abs,
+    )
+
+    # 再裁剪极端发散值
+    residual64 = np.clip(residual64, -clip_abs, clip_abs)
+
+    residual_mse = float(np.mean(residual64 * residual64))
+    residual_rms = float(np.sqrt(residual_mse + eps))
+    residual_dbfs = float(20.0 * np.log10(residual_rms + eps))
+    residual_peak = float(np.max(np.abs(residual64))) if residual64.size > 0 else 0.0
+
+    # 如果原始值非有限，或者原始峰值已经超过裁剪阈值，就认为该输出异常
+    residual_was_clipped = bool((finite_ratio < 1.0) or (max_abs_raw > clip_abs))
+
+    return {
+        "residual_mse": residual_mse,
+        "residual_rms": residual_rms,
+        "residual_dbfs": residual_dbfs,
+        "residual_peak": residual_peak,
+
+        # 诊断字段
+        "residual_finite_ratio": finite_ratio,
+        "residual_max_abs_raw": max_abs_raw,
+        "residual_was_clipped": residual_was_clipped,
+    }
+
 def _is_valid_audio_for_objective_metric(x, *, min_rms=1e-6, max_abs=50.0):
     """
     判断一条音频是否适合送进 PESQ / SI-SDR 这类客观指标。
@@ -92,12 +158,15 @@ def evaluate_sample(sample, e, scenario_name, fs, cfg):
     # 不同场景下，原始误差 e 的含义不同
     if scenario_name in ["farend_single_talk", "path_change"]:
         residual_for_erle = e.copy()
+        residual_metrics = compute_residual_basic_metrics(residual_for_erle)
 
     elif scenario_name == "noisy_single_talk":
         residual_for_erle = e - v
+        residual_metrics = compute_residual_basic_metrics(residual_for_erle)
 
     elif scenario_name == "double_talk":
         residual_for_erle = e - s
+        residual_metrics = None
 
     else:
         raise ValueError(f"Unsupported scenario_name: {scenario_name}")
@@ -164,6 +233,17 @@ def evaluate_sample(sample, e, scenario_name, fs, cfg):
         "convergence_curve_db": convergence_curve_db.astype(np.float32),
         "pesq": pesq_value,
         "si_sdr": si_sdr_value,
+
+        # 新增：远端单讲 / 残余回声指标
+        "residual_mse": residual_metrics["residual_mse"],
+        "residual_rms": residual_metrics["residual_rms"],
+        "residual_dbfs": residual_metrics["residual_dbfs"],
+        "residual_peak": residual_metrics["residual_peak"],
+
+        # 新增：诊断字段，用来判断是否发散 / 裁剪
+        "residual_finite_ratio": residual_metrics["residual_finite_ratio"],
+        "residual_max_abs_raw": residual_metrics["residual_max_abs_raw"],
+        "residual_was_clipped": residual_metrics["residual_was_clipped"],
     }
 
     return result
@@ -220,6 +300,14 @@ def print_summary(results, sample, cfg):
     for alg_name, res in results.items():
         print(f"[{alg_name}]")
         print(f"  ERLE   : {res['erle']:.4f} dB")
+        if res.get("residual_rms", None) is not None:
+            print(f"  Residual RMS  : {res['residual_rms']:.6e}")
+
+        if res.get("residual_dbfs", None) is not None:
+            print(f"  Residual dBFS : {res['residual_dbfs']:.4f} dB")
+
+        if res.get("residual_mse", None) is not None:
+            print(f"  Residual MSE  : {res['residual_mse']:.6e}")
 
         if res["pesq"] is not None:
             print(f"  PESQ   : {res['pesq']:.4f}")
@@ -523,8 +611,17 @@ def build_comparison_table_rows(results):
         row = {
             "Method": alg_name,
             "ERLE(dB)": _format_table_value(res.get("erle", None), digits=4),
+
+            # far-end single-talk 下 PESQ / SI-SDR 通常为空，这是正常的
             "PESQ": _format_table_value(res.get("pesq", None), digits=4),
             "SI-SDR(dB)": _format_table_value(res.get("si_sdr", None), digits=4),
+
+            # 新增：远端单讲更应该看的残余回声指标
+            "Residual RMS": _format_table_value(res.get("residual_rms", None), digits=6),
+            "Residual dBFS": _format_table_value(res.get("residual_dbfs", None), digits=2),
+            "Residual MSE": _format_table_value(res.get("residual_mse", None), digits=6),
+            "Residual Peak": _format_table_value(res.get("residual_peak", None), digits=6),
+            "Residual Clipped": _format_table_value(res.get("residual_was_clipped", None), digits=4),
 
             "Params": _format_count(comp.get("param_count", None)),
             "States": _format_count(comp.get("state_count", None)),
@@ -638,6 +735,12 @@ def save_results(results, sample, cfg, out_dir: Path):
                 "erle": res["erle"],
                 "pesq": res["pesq"],
                 "si_sdr": res["si_sdr"],
+
+                "residual_mse": res.get("residual_mse", None),
+                "residual_rms": res.get("residual_rms", None),
+                "residual_dbfs": res.get("residual_dbfs", None),
+                "residual_peak": res.get("residual_peak", None),
+
                 "complexity": res.get("complexity", None),
             }
 
@@ -660,6 +763,26 @@ def save_results(results, sample, cfg, out_dir: Path):
             save_dict[f"{prefix}_residual_for_erle"] = res["residual_for_erle"]
             save_dict[f"{prefix}_erle_curve"] = res["erle_curve"]
             save_dict[f"{prefix}_convergence_curve_db"] = res["convergence_curve_db"]
+
+            if res.get("residual_mse", None) is not None:
+                save_dict[f"{prefix}_residual_mse"] = np.asarray(
+                    res["residual_mse"], dtype=np.float32
+                )
+
+            if res.get("residual_rms", None) is not None:
+                save_dict[f"{prefix}_residual_rms"] = np.asarray(
+                    res["residual_rms"], dtype=np.float32
+                )
+
+            if res.get("residual_dbfs", None) is not None:
+                save_dict[f"{prefix}_residual_dbfs"] = np.asarray(
+                    res["residual_dbfs"], dtype=np.float32
+                )
+
+            if res.get("residual_peak", None) is not None:
+                save_dict[f"{prefix}_residual_peak"] = np.asarray(
+                    res["residual_peak"], dtype=np.float32
+                )
 
             # 新增：统一保存 AEC 输出
             if res.get("aec_output", None) is not None:
