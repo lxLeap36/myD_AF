@@ -58,7 +58,7 @@ def main():
 
     # 2. 创建结果输出目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = ROOT_DIR / "Results" / "results_basic_dl" / f"{CONFIG['scenario_name']}_{timestamp}"
+    out_dir = ROOT_DIR / "Results" / "results_white_noise_input_room01" / f"{CONFIG['scenario_name']}_{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 3. 构造同一条 sample，保证三个算法公平比较

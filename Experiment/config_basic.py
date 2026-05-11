@@ -14,16 +14,22 @@ CONFIG = {
     # "noisy_single_talk"
     # "double_talk"
     # "path_change"
-    "scenario_name": "nonlinear_farend_single_talk",
+    # "nonlinear_farend_single_talk"
+    "scenario_name": "farend_single_talk",
 
     # ===== 单条实验语音时长 =====
     "duration_sec": 3.0,
 
     # ===== 数据路径 =====
-    "far_speech_dir": ROOT_DIR / "Dataset" / "clean_speech_test1",
-    "near_speech_dir": ROOT_DIR / "Dataset" / "clean_speech_test2",
+# By default point to automatically generated white-noise test files.
+    # Run Tools/generate_white_noise.py to create these if missing.
+    "far_speech_dir": ROOT_DIR / "Dataset" / "white_noise_test_a",
+    "near_speech_dir": ROOT_DIR / "Dataset" / "white_noise_test_b",
+
+    # "far_speech_dir": ROOT_DIR / "Dataset" / "clean_speech_test1",
+    # "near_speech_dir": ROOT_DIR / "Dataset" / "clean_speech_test2",
     "babble_noise_dir": ROOT_DIR / "Dataset" / "Noise" / "babble_noise",
-    "rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "smallroom" / "Room200",
+    "rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "smallroom" / "Room001",
     #"rir_dir": ROOT_DIR / "Dataset" / "simulated_rirs" / "easy_8rir",
 
     # 若手动指定某一条 RIR 文件，填完整路径；否则设为 None
@@ -128,7 +134,7 @@ CONFIG = {
     "alg_params": {
         "lms": {
             "filter_length": 512,
-            "step_size": 0.1,
+            "step_size": 0.001,
         },
         "nlms": {
             "filter_length": 1024,
@@ -144,7 +150,7 @@ CONFIG = {
         "klms": {
             "filter_length": 512,    # 时间延迟嵌入长度
             "step_size": 0.5,        # 学习率 (eta)
-            "kernel_param": 0.142623,     # 高斯核带宽参数 (gamma/a)
+            "kernel_param": 0.022345,     # 高斯核带宽参数 (gamma/a)
             "budget": 1000,          # 字典大小上限，防止长时间序列导致 OOM
         },
         # ===== PyTorch adaptive filters =====

@@ -156,7 +156,7 @@ def evaluate_sample(sample, e, scenario_name, fs, cfg):
     v = to_numpy_1d(sample["v"])
 
     # 不同场景下，原始误差 e 的含义不同
-    if scenario_name in ["farend_single_talk", "path_change"]:
+    if scenario_name in ["farend_single_talk", "path_change", "nonlinear_farend_single_talk"]:
         residual_for_erle = e.copy()
         residual_metrics = compute_residual_basic_metrics(residual_for_erle)
 

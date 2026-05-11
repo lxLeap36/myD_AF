@@ -41,7 +41,7 @@ def estimate_optimal_klms_gamma(audio_signal, filter_length=512, sample_size=200
 
 if __name__ == "__main__":
     # ⚠️ 替换为你本地那半小时的音频路径D:\pyProject\myD_AF\Dataset\clean_speech_test1\speaker05_25min.wav
-    audio_file_path = r"D:\pyProject\myD_AF\Dataset\clean_speech_test1\speaker05_25min.wav"
+    audio_file_path = r"D:\pyProject\myD_AF\Dataset\white_noise_test_b\white_noise_b.wav"
 
     if os.path.exists(audio_file_path):
         print(f"✅ 找到音频: {audio_file_path}")
